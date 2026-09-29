@@ -1,4 +1,3 @@
-js
 export const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCpSitXaHp_adHrwJHr1kMYA8vth-1SDto",
   authDomain: "fragekort.firebaseapp.com",
