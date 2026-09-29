@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Klistra in hela den här filen under Firestore Database → Rules i Firebase och tryck Publish.
+// BYT UT din@epost.se nedan mot Google-kontot du loggar in med på admin-sidan.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['ingabireamelie6@gmail.com'];
+    }
+
+    function codeActive(c) {
+      return c is string
+        && exists(/databases/$(database)/documents/codes/$(c))
+        && get(/databases/$(database)/documents/codes/$(c)).data.active == true;
+    }
+
+    // Aktiveringskoder: vem som helst kan kontrollera en kod man redan har,
+    // men bara du kan lista, skapa, stänga av och ta bort koder.
+    match /codes/{code} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        // spelet får bara räkna upp användningen med ett
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses', 'lastUsed'])
+        && request.resource.data.uses == resource.data.get('uses', 0) + 1
+        && request.resource.data.lastUsed == request.time
+      );
+    }
+
+    // Lobbyer: alla kan gå med, men lobbyn kan bara skapas och ändras
+    // så länge den är kopplad till en aktiv aktiveringskod.
+    match /lobbies/{lobby} {
+      allow read: if true;
+      allow create, update: if codeActive(request.resource.data.activation);
+      allow delete: if isAdmin();
+
+      // Vem som tryckte först: varje kort kan bara få en vinnare.
+      match /buzz/{card} {
+        allow read: if true;
+        allow create: if exists(/databases/$(database)/documents/lobbies/$(lobby));
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+    }
+  }
+}

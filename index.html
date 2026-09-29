@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frågekort</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F5; --surface:#FFFFFF; --ink:#1B2230; --muted:#5E6878; --line:#D6DCE5; --soft:#E3E8EF;
+  --c-all:#2F6FED; --ok:#1E9E6A; --ok-deep:#147852; --bad:#D93A3A;
+  --font:"Bricolage Grotesque", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#141922; --surface:#1E2530; --ink:#EEF1F6; --muted:#9AA4B4; --line:#2E3746; --soft:#262E3B; }
+}
+:root[data-theme="dark"]{ --bg:#141922; --surface:#1E2530; --ink:#EEF1F6; --muted:#9AA4B4; --line:#2E3746; --soft:#262E3B; }
+html{ scroll-padding-top:env(safe-area-inset-top,0px); height:100%; }
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:var(--font); -webkit-font-smoothing:antialiased; }
+button{ font:inherit; color:inherit; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+button:active:not(:disabled){ transform:scale(.98); }
+button:disabled{ cursor:default; opacity:.6; }
+button:focus-visible, input:focus-visible{ outline:3px solid var(--c-all); outline-offset:2px; }
+.wrap{ max-width:560px; margin:0 auto; padding:20px 18px 40px; }
+.view{ display:none; } .view.on{ display:block; }
+.top{ display:flex; justify-content:space-between; align-items:center; min-height:40px; }
+.brand{ font-weight:800; font-size:1.05rem; letter-spacing:-.01em; }
+.back{ background:none; border:0; padding:6px 0; color:var(--muted); font-size:.95rem; }
+
+/* Buttons & inputs */
+.btn{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:17px; border:0; border-radius:16px; font-size:1.08rem; font-weight:600; }
+.btn svg{ width:22px; height:22px; }
+.primary{ background:var(--ink); color:var(--bg); }
+.ghost{ background:transparent; box-shadow:inset 0 0 0 1.5px var(--line); }
+.row{ display:flex; gap:10px; } .row > *{ flex:1; }
+.stack{ display:grid; gap:10px; }
+.field{ width:100%; padding:16px; border-radius:14px; border:0; background:var(--surface); box-shadow:inset 0 0 0 1.5px var(--line); font:inherit; font-size:1.05rem; color:var(--ink); }
+.field.code{ text-transform:uppercase; letter-spacing:.2em; font-weight:600; }
+.field.code::placeholder{ letter-spacing:normal; font-weight:400; text-transform:none; }
+label.lbl{ display:block; font-size:.9rem; color:var(--muted); margin:0 0 6px 2px; }
+.linkbtn{ background:none; border:0; padding:12px 0; color:var(--ink); text-decoration:underline; text-underline-offset:3px; font-size:.95rem; display:block; margin:6px auto 0; }
+.note{ color:var(--muted); font-size:.9rem; line-height:1.45; text-align:center; margin:12px 0 0; }
+
+/* Start */
+.hero{ position:relative; height:230px; margin:8px 0 0; }
+.fan{ position:absolute; left:50%; top:10px; width:140px; height:196px; border-radius:16px; transform-origin:50% 120%;
+  box-shadow:0 10px 24px -12px rgba(20,30,50,.45); display:flex; align-items:flex-end; padding:14px; color:#fff; font-weight:600; font-size:.82rem; }
+.fan::before{ content:""; position:absolute; top:14px; right:14px; width:36px; height:36px; border-radius:6px;
+  background:repeating-conic-gradient(rgba(255,255,255,.9) 0 25%, transparent 0 50%) 0 0/9px 9px; opacity:.85; }
+h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035em; font-weight:800; margin:6px 0 10px; text-align:center; }
+.lede{ text-align:center; color:var(--muted); margin:0 auto 24px; max-width:32ch; line-height:1.45; }
+.or{ text-align:center; color:var(--muted); font-size:.9rem; margin:4px 0; }
+.resume{ margin-bottom:16px; }
+.invite{ border-radius:14px; background:var(--soft); padding:14px 16px; margin:0 0 14px; line-height:1.4; text-align:center; }
+
+/* Lobby */
+.lobbycode{ text-align:center; margin:10px 0 18px; }
+.lobbycode small{ display:block; color:var(--muted); font-size:.95rem; margin-bottom:2px; }
+.lobbycode strong{ display:block; font-size:clamp(3rem, 16vw, 4.4rem); font-weight:800; letter-spacing:.12em; line-height:1; padding-left:.12em; }
+.panel{ background:var(--surface); border-radius:18px; padding:16px; box-shadow:inset 0 0 0 1px var(--line); margin-bottom:12px; }
+.panel h3{ margin:0 0 12px; font-size:1rem; font-weight:600; display:flex; justify-content:space-between; }
+.panel h3 span{ color:var(--muted); font-weight:400; font-size:.9rem; }
+.joinqr{ display:flex; gap:16px; align-items:center; }
+.joinqr .qrbox{ flex:none; width:132px; height:132px; padding:10px; border-radius:12px; background:#fff; }
+.joinqr .qrbox svg{ width:100%; height:100%; display:block; }
+.joinqr .txt{ flex:1; min-width:0; }
+.joinqr .txt strong{ display:block; font-size:1.05rem; margin-bottom:4px; }
+.joinqr .txt p{ margin:0 0 10px; color:var(--muted); font-size:.9rem; line-height:1.4; }
+.joinqr .txt button{ padding:10px 14px; border-radius:10px; border:0; background:var(--soft); font-weight:600; font-size:.92rem; }
+.linkfield{ width:100%; margin-top:10px; padding:8px 10px; border:0; border-radius:8px; background:var(--soft); color:var(--muted); font:inherit; font-size:.78rem; }
+.players{ display:flex; flex-wrap:wrap; gap:8px; }
+.player{ padding:8px 12px; border-radius:999px; background:var(--soft); font-size:.95rem; }
+.player.me{ box-shadow:inset 0 0 0 1.5px var(--ink); }
+.chips{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.chip{ display:flex; align-items:center; gap:10px; padding:12px; border-radius:12px; border:0; text-align:left; background:var(--soft); font-size:.95rem; transition:background .2s, color .2s; }
+.chip i{ width:18px; height:18px; border-radius:5px; flex:none; box-shadow:inset 0 0 0 2px currentColor; opacity:.5; }
+.chip.on{ color:#fff; } .chip.on i{ background:#fff; opacity:1; box-shadow:none; position:relative; }
+.chip.on i::after{ content:""; position:absolute; left:6px; top:2px; width:5px; height:10px; border:solid var(--chipc); border-width:0 2.5px 2.5px 0; transform:rotate(45deg); }
+.locked .chip{ pointer-events:none; }
+.range{ display:flex; align-items:center; gap:14px; }
+.range input{ flex:1; min-width:0; height:34px; accent-color:var(--ink); }
+.range output{ min-width:4.4ch; text-align:right; font-weight:800; font-size:1.35rem; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+.hostnote{ font-size:.85rem; color:var(--muted); margin:10px 0 0; }
+.actions{ margin-top:18px; }
+
+/* Question */
+#v-question{ padding-bottom:60px; }
+.qcard{ border-radius:24px; color:#fff; padding:22px 22px 26px; min-height:220px; display:flex; flex-direction:column; position:relative; overflow:hidden;
+  box-shadow:0 20px 40px -24px rgba(20,30,50,.6); animation:deal .45s cubic-bezier(.2,.8,.2,1);
+  transition:min-height .7s cubic-bezier(.2,.8,.2,1), padding .7s cubic-bezier(.2,.8,.2,1), border-radius .7s; }
+@keyframes deal{ from{ transform:translateY(24px) rotate(-3deg); opacity:0; } to{ transform:none; opacity:1; } }
+.qmeta{ display:flex; justify-content:space-between; font-size:.9rem; font-weight:600; }
+.qmeta span:last-child{ opacity:.75; font-weight:400; }
+.qtext{ font-size:clamp(1.3rem, 5vw, 1.6rem); line-height:1.12; letter-spacing:-.02em; font-weight:800; margin:auto 0 0; padding-top:18px;
+  transition:font-size .7s cubic-bezier(.2,.8,.2,1), padding-top .7s; }
+.qcard.big{ min-height:calc(100vh - 150px); min-height:calc(100svh - 150px); padding:26px 24px 34px; }
+.qcard.big .qtext{ font-size:clamp(2.1rem, 9.5vw, 3.4rem); line-height:1.04; padding-top:40px; }
+.qcard.small{ min-height:0; padding:16px 18px 18px; border-radius:18px; }
+.byline{ color:var(--muted); font-size:.9rem; margin:10px 2px 0; }
+.stage{ margin-top:18px; }
+
+/* Tidslinje längst ner */
+.tline{ position:fixed; left:0; right:0; bottom:0; z-index:5; height:calc(10px + env(safe-area-inset-bottom,0px)); background:var(--soft);
+  opacity:0; transition:opacity .4s; pointer-events:none; }
+.tline.on{ opacity:1; }
+.tline i{ display:block; height:10px; width:100%; transform-origin:left center; transform:scaleX(0); background:var(--catc, var(--ink));
+  box-shadow:0 0 16px 3px var(--catc, var(--ink)); border-radius:0 6px 6px 0; }
+
+/* Svara / skip */
+.buzzwrap{ display:flex; flex-direction:column; align-items:center; gap:22px; padding:18px 0 8px; }
+.buzz{ width:min(60vw,220px); aspect-ratio:1; border-radius:50%; border:0; background:var(--ok); color:#fff; font-size:2.1rem; font-weight:800; letter-spacing:-.02em;
+  box-shadow:0 10px 0 var(--ok-deep), 0 26px 40px -16px rgba(30,158,106,.75); animation:pop .5s cubic-bezier(.2,1.4,.4,1); transition:transform .08s, box-shadow .08s; }
+.buzz:active:not(:disabled){ transform:translateY(8px); box-shadow:0 2px 0 var(--ok-deep), 0 10px 20px -12px rgba(30,158,106,.75); }
+@keyframes pop{ from{ transform:scale(.4); opacity:0; } to{ transform:none; opacity:1; } }
+.skipbtn{ padding:14px 38px; border-radius:999px; border:0; background:transparent; box-shadow:inset 0 0 0 1.5px var(--line); font-weight:600; font-size:1.02rem; animation:pop .5s .08s both; }
+.waitbox{ text-align:center; padding:22px 0 10px; }
+.waitbox strong{ display:block; font-size:1.6rem; letter-spacing:-.03em; font-weight:800; }
+.waitbox span{ color:var(--muted); }
+.waitbox b{ display:block; font-size:4.2rem; font-weight:800; letter-spacing:-.04em; line-height:1; margin-top:10px; font-variant-numeric:tabular-nums; color:var(--ok); }
+.answer{ border-radius:18px; background:var(--surface); box-shadow:inset 0 0 0 2px var(--catc); padding:18px 20px; margin-bottom:14px; animation:flip .4s cubic-bezier(.2,.8,.2,1); }
+@keyframes flip{ from{ transform:rotateX(60deg); opacity:0; } to{ transform:none; opacity:1; } }
+.answer small{ color:var(--muted); font-size:.9rem; }
+.answer div{ font-size:1.8rem; font-weight:800; letter-spacing:-.02em; margin-top:2px; }
+.answer p{ margin:8px 0 0; color:var(--muted); font-size:.92rem; }
+
+/* Grön skärm för den som tryckte först */
+.win{ position:fixed; inset:0; z-index:15; background:var(--ok); color:#fff; display:none; flex-direction:column; align-items:center; text-align:center;
+  padding:calc(env(safe-area-inset-top,0px) + 28px) 22px calc(env(safe-area-inset-bottom,0px) + 24px); }
+.win.on{ display:flex; animation:flash .45s ease-out; }
+@keyframes flash{ from{ background:#fff; } to{ background:var(--ok); } }
+.win .w-top{ margin:0; font-weight:600; font-size:1.05rem; opacity:.9; }
+.win .w-big{ margin:6px 0 0; font-size:clamp(2.8rem, 14vw, 4.6rem); line-height:.95; letter-spacing:-.04em; font-weight:800; }
+.win .w-q{ margin:18px auto 0; max-width:30ch; font-size:1.05rem; line-height:1.35; opacity:.92; }
+.win .w-count{ margin:auto 0; font-size:clamp(7rem, 42vw, 12rem); line-height:1; font-weight:800; letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+.win .w-bottom{ width:100%; max-width:420px; }
+.win .w-bottom p{ margin:0; opacity:.9; }
+.win .btn{ background:#fff; color:var(--ok-deep); font-weight:800; font-size:1.2rem; padding:20px; }
+
+/* Scanner */
+.scanner{ position:fixed; inset:0; z-index:10; background:#000; color:#fff; display:none; flex-direction:column; }
+.scanner.on{ display:flex; }
+.scanner video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.shade{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.frame{ width:min(68vw,280px); aspect-ratio:1; border-radius:22px; box-shadow:0 0 0 100vmax rgba(0,0,0,.55); position:relative; }
+.frame::before{ content:""; position:absolute; inset:-3px; border-radius:24px; border:4px solid #fff;
+  -webkit-mask:conic-gradient(#000 0 0) top left/34px 34px no-repeat, conic-gradient(#000 0 0) top right/34px 34px no-repeat, conic-gradient(#000 0 0) bottom left/34px 34px no-repeat, conic-gradient(#000 0 0) bottom right/34px 34px no-repeat;
+          mask:conic-gradient(#000 0 0) top left/34px 34px no-repeat, conic-gradient(#000 0 0) top right/34px 34px no-repeat, conic-gradient(#000 0 0) bottom left/34px 34px no-repeat, conic-gradient(#000 0 0) bottom right/34px 34px no-repeat; }
+.frame::after{ content:""; position:absolute; left:10px; right:10px; height:2px; background:rgba(255,255,255,.8); top:12px; animation:sweep 2.2s ease-in-out infinite; }
+.frame.hit::before{ border-color:#3BD68F; }
+@keyframes sweep{ 0%,100%{ top:12px; } 50%{ top:calc(100% - 14px); } }
+.scantop{ position:relative; display:flex; justify-content:space-between; align-items:center; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0; }
+.scantop b{ font-weight:600; }
+.close{ width:44px; height:44px; border-radius:50%; border:0; background:rgba(255,255,255,.18); color:#fff; font-size:1.3rem; }
+.scanbottom{ position:relative; margin-top:auto; padding:18px 18px calc(env(safe-area-inset-bottom,0px) + 20px); background:linear-gradient(transparent, rgba(0,0,0,.75) 30%); }
+.status{ text-align:center; min-height:2.8em; margin:0 auto 12px; max-width:34ch; line-height:1.4; }
+.manual{ display:flex; gap:8px; }
+.manual input{ flex:1; min-width:0; padding:14px; border-radius:12px; border:0; font:inherit; font-size:1rem; text-transform:uppercase; background:rgba(255,255,255,.14); color:#fff; }
+.manual input::placeholder{ color:rgba(255,255,255,.6); text-transform:none; }
+.manual button{ padding:14px 16px; border-radius:12px; border:0; background:#fff; color:#111; font-weight:600; }
+
+/* Deck */
+.deckhead h2{ font-size:1.8rem; letter-spacing:-.025em; margin:6px 0 6px; }
+.deckhead p{ color:var(--muted); margin:0 0 18px; line-height:1.45; }
+.deck{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.pcard{ border-radius:14px; overflow:hidden; background:#fff; color:#111; box-shadow:inset 0 0 0 1px var(--line); display:flex; flex-direction:column; }
+.pcard header{ color:#fff; padding:8px 10px; font-size:.78rem; font-weight:600; }
+.pcard .qr{ padding:12px 14px 6px; }
+.pcard .qr svg{ width:100%; height:auto; display:block; }
+.pcard footer{ text-align:center; font-size:.8rem; padding:0 8px 10px; color:#444; }
+
+.toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 24px); transform:translate(-50%, 20px); opacity:0; z-index:20;
+  background:var(--ink); color:var(--bg); padding:12px 18px; border-radius:12px; max-width:min(92vw,420px); text-align:center; transition:opacity .25s, transform .25s; pointer-events:none; }
+.toast.on{ opacity:1; transform:translate(-50%,0); }
+
+@media print{
+  body{ background:#fff; } .noprint{ display:none !important; } .wrap{ max-width:none; }
+  .deck{ grid-template-columns:repeat(3,1fr); gap:24px; } .pcard{ break-inside:avoid; box-shadow:0 0 0 1px #bbb; }
+  .pcard header{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+}
+@media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+
+/* Aktivering */
+.actpanel p{ margin:0 0 12px; color:var(--muted); line-height:1.45; }
+.actpanel .field{ text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+.actpanel .field::placeholder{ letter-spacing:normal; font-weight:400; text-transform:none; }
+.actok{ display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 16px; color:var(--muted); font-size:.95rem; }
+.actok::before{ content:""; width:10px; height:10px; border-radius:50%; background:var(--ok); }
+.actok button{ background:none; border:0; padding:4px; text-decoration:underline; text-underline-offset:3px; color:var(--ink); font-size:.95rem; }
+</style>
+</head>
+<body>
+
+<!-- START -->
+<main class="view wrap" id="v-start">
+  <div class="top"><span class="brand">Frågekort</span></div>
+  <div class="hero" id="hero" aria-hidden="true"></div>
+  <h1>Dra ett kort.<br>Skanna det.</h1>
+  <p class="lede">Skapa en lobby, låt kompisarna skanna lobbyns QR-kod och välj vilka kategorier ni spelar.</p>
+  <div id="resume"></div>
+  <div id="invite"></div>
+  <div id="actBox"></div>
+  <div class="stack">
+    <div><label class="lbl" for="nameIn">Ditt namn</label><input class="field" id="nameIn" maxlength="20" placeholder="T.ex. Adrian" autocomplete="nickname"></div>
+    <button class="btn primary" id="createBtn">Skapa lobby</button>
+    <p class="or">eller gå med i en kompis lobby</p>
+    <div class="row">
+      <input class="field code" id="joinIn" maxlength="4" placeholder="Lobbykod" autocomplete="off" autocapitalize="characters" style="flex:1.4">
+      <button class="btn ghost" id="joinBtn">Gå med</button>
+    </div>
+  </div>
+  <button class="linkbtn" id="soloBtn">Spela på en enhet utan lobby</button>
+</main>
+
+<!-- LOBBY -->
+<main class="view wrap" id="v-lobby">
+  <div class="top"><span class="brand">Frågekort</span><button class="back" id="leaveBtn">Lämna</button></div>
+  <div class="lobbycode" id="lobbyHead"></div>
+  <section class="panel" id="joinPanel"></section>
+  <section class="panel"><h3>Spelare <span id="pCount"></span></h3><div class="players" id="players"></div></section>
+  <section class="panel">
+    <h3>Tid att tänka</h3>
+    <div class="range">
+      <input type="range" id="timeRange" min="5" max="60" step="1" aria-label="Sekunder att tänka innan man får svara">
+      <output id="timeOut" for="timeRange">20 s</output>
+    </div>
+    <p class="hostnote">Alla i lobbyn kan ändra tiden, 5 till 60 sekunder.</p>
+  </section>
+  <section class="panel" id="settingsPanel">
+    <h3>Kategorier <span id="catCount"></span></h3>
+    <div class="chips" id="catChips"></div>
+    <p class="hostnote" id="hostNote"></p>
+  </section>
+  <div class="actions stack">
+    <button class="btn primary" id="startGameBtn">Starta spelet</button>
+    <p class="note" id="waitNote" style="display:none">Väntar på att värden startar spelet…</p>
+  </div>
+</main>
+
+<!-- PLAY -->
+<main class="view wrap" id="v-play">
+  <div class="top"><span class="brand" id="playLobby"></span><button class="back" id="backLobbyBtn">Till lobbyn</button></div>
+  <div class="hero" id="playHero" aria-hidden="true" style="height:220px"></div>
+  <h1 style="margin-top:0">Dra ett kort.</h1>
+  <p class="lede" id="playInfo"></p>
+  <div class="stack">
+    <button class="btn primary" id="scanBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
+      Skanna kort
+    </button>
+    <button class="btn ghost" id="randBtn">Dra ett slumpat kort</button>
+  </div>
+</main>
+
+<!-- QUESTION -->
+<main class="view wrap" id="v-question">
+  <div class="top"><span class="brand" id="qLobby"></span><button class="back" id="toLobbyBtn">Till lobbyn</button></div>
+  <div id="qwrap"></div>
+</main>
+
+<!-- Tidslinjen -->
+<div class="tline" id="tline" aria-hidden="true"><i id="tfill"></i></div>
+
+<!-- Grön skärm -->
+<div class="win" id="win" role="alertdialog" aria-labelledby="winBig">
+  <p class="w-top">Du tryckte först</p>
+  <h2 class="w-big" id="winBig">Svara nu!</h2>
+  <p class="w-q" id="winQ"></p>
+  <div class="w-count" id="winCd">5</div>
+  <div class="w-bottom" id="winBottom"></div>
+</div>
+
+<!-- SCANNER -->
+<div class="scanner" id="scanner" role="dialog" aria-label="Skanna QR-kod">
+  <video id="video" playsinline muted></video>
+  <div class="shade"><div class="frame" id="frame"></div></div>
+  <div class="scantop"><b id="scanTitle">Skanna kortets QR-kod</b><button class="close" id="closeScan" aria-label="Stäng">✕</button></div>
+  <div class="scanbottom">
+    <p class="status" id="status">Startar kameran…</p>
+    <form class="manual" id="manual">
+      <input id="codeIn" placeholder="Eller skriv koden, t.ex. GEO" autocomplete="off" autocapitalize="characters">
+      <button>Öppna</button>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, runTransaction, increment, serverTimestamp, FieldPath }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { FIREBASE_CONFIG, APP_URL } from "./config.js";
+import { CATS, Q } from "./fragor.js";
+
+/* ================= Inställningar ================= */
+const TIME_MIN = 5, TIME_MAX = 60, TIME_DEFAULT = 20;  // tid att tänka (sekunder)
+const ANSWER_SECONDS = 5;                              // tid att svara efter att man tryckt först
+const CAT_KEYS = Object.keys(CATS);
+
+let fs = null;
+try { if (FIREBASE_CONFIG && FIREBASE_CONFIG.projectId) fs = getFirestore(initializeApp(FIREBASE_CONFIG)); }
+catch(e){ console.error("Firebase kunde inte startas:", e); }
+
+/* ================= Hjälpare ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const appURL = () => APP_URL || location.href.split("#")[0];
+const joinURL = code => appURL() + "#L-" + code;
+const clampT = n => Math.max(TIME_MIN, Math.min(TIME_MAX, Math.round(+n || TIME_DEFAULT)));
+const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+function deepMerge(a, b){
+  const out = isObj(a) ? { ...a } : {};
+  for (const k in b){ const v = b[k]; out[k] = isObj(v) && isObj(out[k]) ? deepMerge(out[k], v) : v; }
+  return out;
+}
+// Gör om {card:{buzz:x}} till fältvägar så Firestore slår ihop i stället för att skriva över.
+function toFieldArgs(obj, prefix = [], out = []){
+  for (const k in obj){
+    const v = obj[k], p = prefix.concat(k);
+    if (isObj(v) && Object.keys(v).length) toFieldArgs(v, p, out);
+    else out.push(new FieldPath(...p), v);
+  }
+  return out;
+}
+const ls = { get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+             set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+             del(k){ try { localStorage.removeItem(k); } catch(e){} } };
+let toastT;
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 3800); }
+function vib(p){ try { if (navigator.vibrate) navigator.vibrate(p); } catch(e){} }
+function qrSvg(text){
+  try { const qr = qrcode(0, "M"); qr.addData(text); qr.make(); return qr.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
+  catch(e){ return ""; }
+}
+const elapsed = at => Math.max(0, (Date.now() - (at || 0)) / 1000);
+
+// Kategorikort: "…#GEO", "GEO"
+function catFromText(text){
+  let s = String(text || "").trim().toUpperCase();
+  if (s.includes("#")) s = s.slice(s.lastIndexOf("#") + 1);
+  const m = s.match(/^(ALL|GEO|FILM|MUS|HIS|SPO)(?:-\d+)?$/);
+  return m ? m[1] : null;
+}
+// Aktiveringskod: "…#AKT-K7Q2XP9M4TDA", "K7Q2-XP9M-4TDA"
+function parseAct(text){
+  let s = String(text || "").toUpperCase();
+  if (s.includes("#")) s = s.slice(s.lastIndexOf("#") + 1);
+  s = s.replace(/[^A-Z0-9]/g, "");
+  if (s.startsWith("AKT")) s = s.slice(3);
+  return /^[2-9A-HJ-NP-Z]{12}$/.test(s) ? s : null;
+}
+const qOf = card => ((Q[card.cat] || [])[card.qi]) || ["Frågan finns inte längre i listan.", "–"];
+
+/* ================= Tillstånd ================= */
+const S = { me:{ id:null, name: ls.get("fk-name") || "" }, act: ls.get("fk-act") || null, store:null, L:null, view:"start",
+            cardShown:null, phaseShown:null, stageKey:null, pressing:null, dragging:false, invite:null, scanMode:"card" };
+function localId(){ let id = ls.get("fk-id"); if (!id){ id = "p" + Math.random().toString(36).slice(2, 12); ls.set("fk-id", id); } return id; }
+S.me.id = localId();
+
+/* ================= Aktivering ================= */
+async function checkAct(code){
+  if (!fs) return "offline";
+  try { const s = await getDoc(doc(fs, "codes", code)); if (!s.exists()) return "missing"; return s.data().active === true ? "ok" : "off"; }
+  catch(e){ return "error"; }
+}
+const ACT_MSG = {
+  missing:"Koden finns inte. Kontrollera att du skrivit den rätt.",
+  off:"Den här koden är avstängd. Kontakta säljaren så hjälper vi dig.",
+  error:"Kunde inte kontrollera koden. Kontrollera internetanslutningen och försök igen.",
+  offline:"Spelet är inte kopplat till databasen än (config.js saknas)."
+};
+async function activate(code){
+  const r = await checkAct(code);
+  if (r === "ok"){ S.act = code; ls.set("fk-act", code); toast("Spelet är aktiverat. Nu kan du skapa lobbyer."); renderStart(); return true; }
+  toast(ACT_MSG[r]); return false;
+}
+function forgetAct(){ S.act = null; ls.del("fk-act"); renderStart(); }
+function needAct(){
+  if (!fs){ toast(ACT_MSG.offline); return false; }
+  if (!S.act){ toast("Aktivera spelet först med koden på kortet i lådan."); const i = $("#actIn"); if (i) i.focus(); return false; }
+  return true;
+}
+
+/* ================= Lobby-lagring ================= */
+function freshLobby(code){
+  return { code, activation:S.act, hostId:S.me.id, createdAt:Date.now(), settings:{ cats:[...CAT_KEYS], seconds:TIME_DEFAULT },
+           started:false, card:null, skips:{}, used:[], players:{} };
+}
+function writeError(e){
+  if (e && e.code === "permission-denied") toast("Spelets aktiveringskod är avstängd, så lobbyn kan inte ändras.");
+  else toast("Ändringen kunde inte sparas. Kontrollera internetanslutningen.");
+}
+function makeRemoteLobby(code){
+  const ref = doc(fs, "lobbies", code);
+  let queue = Promise.resolve(), unsub = null;
+  return {
+    code, remote:true,
+    listen(onData){
+      // Firestore visar egna ändringar direkt, innan servern svarat.
+      unsub = onSnapshot(ref, s => onData(s.exists() ? s.data() : null),
+        () => { toast("Anslutningen till lobbyn bröts. Gå med igen med koden."); goStart(); });
+    },
+    update(patch){
+      const args = toFieldArgs(patch);
+      if (!args.length) return queue;
+      queue = queue.then(() => updateDoc(ref, ...args)).catch(writeError);
+      return queue;
+    },
+    async claimBuzz(cardId, me){
+      const bref = doc(fs, "lobbies", code, "buzz", cardId);
+      return runTransaction(fs, async tx => {
+        const s = await tx.get(bref);
+        if (s.exists()){ const d = s.data(); return { won: d.id === me.id, winner:d }; }
+        tx.set(bref, me);
+        return { won:true, winner:me };
+      });
+    },
+    async leave(){
+      if (unsub) unsub();
+      try { await queue; await updateDoc(ref, new FieldPath("players", S.me.id), null); } catch(e){}
+    }
+  };
+}
+function makeLocalLobby(){
+  let data = freshLobby(null);
+  const saved = ls.get("fk-solo-settings"); if (saved && Array.isArray(saved.cats)) data.settings = { cats:saved.cats, seconds:clampT(saved.seconds) };
+  data.players = { [S.me.id]: { name: S.me.name || "Du", joinedAt: Date.now() } };
+  let cb = null;
+  return {
+    code:null, remote:false,
+    listen(onData){ cb = onData; onData(structuredClone(data)); },
+    update(patch){ data = deepMerge(data, patch); if (patch.settings) ls.set("fk-solo-settings", data.settings); cb && cb(structuredClone(data)); return Promise.resolve(); },
+    async claimBuzz(cardId, me){ return { won:true, winner:me }; },
+    async leave(){ cb = null; }
+  };
+}
+
+function genCode(){ const A = "ABCDEFGHJKLMNPQRSTUVWXYZ"; let c = ""; for (let i = 0; i < 4; i++) c += A[Math.random() * A.length | 0]; return c; }
+function needName(){
+  const n = $("#nameIn").value.trim();
+  if (!n){ toast("Skriv ditt namn först."); $("#nameIn").focus(); return null; }
+  S.me.name = n; ls.set("fk-name", n); return n;
+}
+
+async function createLobby(){
+  if (!needName() || !needAct()) return;
+  $("#createBtn").disabled = true;
+  try {
+    let code = null;
+    for (let i = 0; i < 6 && !code; i++){
+      const c = genCode(); const snap = await getDoc(doc(fs, "lobbies", c));
+      const old = snap.exists() ? snap.data() : null;
+      if (!old || Date.now() - (old.createdAt || 0) > 12 * 3600e3) code = c;
+    }
+    if (!code) throw new Error("no code");
+    const data = freshLobby(code);
+    data.players[S.me.id] = { name:S.me.name, joinedAt:Date.now() };
+    await setDoc(doc(fs, "lobbies", code), data);
+    updateDoc(doc(fs, "codes", S.act), { uses:increment(1), lastUsed:serverTimestamp() }).catch(() => {});
+    enterLobby(makeRemoteLobby(code));
+  } catch(e){
+    if (e && e.code === "permission-denied"){
+      const r = await checkAct(S.act);
+      if (r === "off" || r === "missing"){ toast(ACT_MSG[r]); forgetAct(); }
+      else toast("Lobbyn kunde inte skapas. Försök igen.");
+    } else toast("Lobbyn kunde inte skapas. Kontrollera internetanslutningen.");
+  }
+  $("#createBtn").disabled = false;
+}
+async function joinLobby(codeArg, silent){
+  const code = (codeArg || $("#joinIn").value).trim().toUpperCase();
+  if (!silent && !needName()) return false;
+  if (!/^[A-Z]{4}$/.test(code)){ toast("Lobbykoden har fyra bokstäver."); return false; }
+  if (!fs){ toast(ACT_MSG.offline); return false; }
+  try {
+    const ref = doc(fs, "lobbies", code);
+    const snap = await getDoc(ref);
+    if (!snap.exists()){ toast(`Ingen lobby har koden ${code}.`); if (ls.get("fk-lobby") === code) ls.del("fk-lobby"); return false; }
+    await updateDoc(ref, new FieldPath("players", S.me.id), { name:S.me.name || "Spelare", joinedAt:Date.now() });
+    S.invite = null;
+    enterLobby(makeRemoteLobby(code));
+    return true;
+  } catch(e){
+    toast(e && e.code === "permission-denied" ? "Lobbyn är stängd eftersom spelets kod är avstängd." : "Kunde inte gå med i lobbyn. Försök igen.");
+    return false;
+  }
+}
+async function playSolo(){
+  if (!needAct()) return;
+  const r = await checkAct(S.act);
+  if (r === "off" || r === "missing"){ toast(ACT_MSG[r]); forgetAct(); return; }
+  enterLobby(makeLocalLobby());
+}
+
+function enterLobby(store){
+  if (S.store) S.store.leave();
+  S.store = store; S.L = null; S.cardShown = null;
+  if (store.remote) ls.set("fk-lobby", store.code);
+  store.listen(onLobby);
+}
+async function leaveLobby(){
+  const st = S.store; S.store = null; S.L = null;
+  ls.del("fk-lobby");
+  if (st) await st.leave();
+  goStart();
+}
+function goStart(){ if (S.store){ const st = S.store; S.store = null; st.leave(); } S.L = null; renderStart(); show("start"); }
+
+/* ================= Rendering ================= */
+function show(v){
+  if (S.view !== v) window.scrollTo(0,0);
+  S.view = v;
+  document.querySelectorAll(".view").forEach(el => el.classList.toggle("on", el.id === "v-" + v));
+  if (v !== "question"){ $("#win").classList.remove("on"); $("#tline").classList.remove("on"); }
+}
+
+function renderStart(){
+  $("#hero").innerHTML = CAT_KEYS.map((k, i) =>
+    `<div class="fan" style="background:${CATS[k].color};transform:translateX(-50%) rotate(${(i - (CAT_KEYS.length - 1) / 2) * 11}deg)">${CATS[k].name}</div>`).join("");
+  $("#nameIn").value = S.me.name;
+  const saved = ls.get("fk-lobby");
+  $("#resume").innerHTML = saved && saved !== S.invite ? `<button class="btn ghost resume" id="resumeBtn">Gå tillbaka till lobby ${esc(saved)}</button>` : "";
+  if ($("#resumeBtn")) $("#resumeBtn").onclick = () => joinLobby(saved, true);
+  $("#invite").innerHTML = S.invite ? `<p class="invite">Du är inbjuden till lobby <b>${esc(S.invite)}</b>. Skriv ditt namn och tryck Gå med.</p>` : "";
+  if (S.invite) $("#joinIn").value = S.invite;
+
+  const box = $("#actBox");
+  if (!fs){
+    box.innerHTML = `<p class="invite">Spelet är inte kopplat till databasen än. Fyll i config.js enligt guiden.</p>`;
+  } else if (S.act){
+    box.innerHTML = `<p class="actok">Spelet är aktiverat <button id="actChange">Byt kod</button></p>`;
+    $("#actChange").onclick = forgetAct;
+  } else if (!S.invite){
+    box.innerHTML = `<section class="panel actpanel">
+        <h3>Aktivera spelet</h3>
+        <p>Skanna aktiveringskortet i lådan, eller skriv koden som står på det. Det behövs bara en gång. Ska du bara gå med i en kompis lobby behöver du ingen kod.</p>
+        <div class="stack">
+          <input class="field" id="actIn" placeholder="T.ex. K7Q2-XP9M-4TDA" autocomplete="off" autocapitalize="characters" maxlength="20">
+          <div class="row"><button class="btn primary" id="actBtn">Aktivera</button><button class="btn ghost" id="actScan">Skanna kortet</button></div>
+        </div>
+      </section>`;
+    const go = () => { const c = parseAct($("#actIn").value); if (!c){ toast("Koden har tolv tecken, t.ex. K7Q2-XP9M-4TDA."); return; } activate(c); };
+    $("#actBtn").onclick = go;
+    $("#actIn").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    $("#actScan").onclick = () => openScanner("act");
+  } else box.innerHTML = "";
+  $("#createBtn").style.display = S.act ? "" : "none";
+  $("#soloBtn").style.display = S.act ? "" : "none";
+  $("#v-start .or").textContent = S.act ? "eller gå med i en kompis lobby" : "Gå med i en kompis lobby";
+}
+
+function isHost(){
+  const L = S.L; if (!L) return false;
+  if (!S.store.remote) return true;
+  const host = L.players && L.players[L.hostId];
+  return L.hostId === S.me.id || !host; // värden lämnade → alla får ändra
+}
+function activePlayers(L){ return Object.entries(L.players || {}).filter(([,p]) => p); }
+
+function onLobby(L){
+  if (!L){ toast("Lobbyn finns inte längre."); ls.del("fk-lobby"); goStart(); return; }
+  if (L.card && !L.card.cat) L = { ...L, card:null };
+  S.L = L;
+  if (pendingCard){ const c = pendingCard; pendingCard = null; setCard(c); return; }
+  if (L.card){
+    if (S.cardShown !== L.card.id || S.view !== "question") renderQuestion(); else renderStage();
+  } else {
+    S.cardShown = null;
+    if (L.started){ renderPlay(); show("play"); }
+    else { renderLobby(); show("lobby"); }
+  }
+}
+
+function renderLobby(){
+  const L = S.L, remote = S.store.remote;
+  $("#lobbyHead").innerHTML = remote
+    ? `<small>Lobbykod</small><strong>${esc(L.code)}</strong>`
+    : `<small>Spel på en enhet</small><strong style="font-size:2.4rem;letter-spacing:-.02em;padding:0">Utan lobby</strong>`;
+  const jp = $("#joinPanel");
+  jp.style.display = remote ? "" : "none";
+  if (remote && jp.dataset.code !== L.code){
+    jp.dataset.code = L.code;
+    const url = joinURL(L.code);
+    jp.innerHTML = `<div class="joinqr">
+        <div class="qrbox" role="img" aria-label="QR-kod för att gå med i lobby ${esc(L.code)}">${qrSvg(url)}</div>
+        <div class="txt"><strong>Skanna för att gå med</strong>
+          <p>Kompisarna skannar koden med kameran, eller skriver ${esc(L.code)} på startsidan.</p>
+          <button id="copyLink">Kopiera länk</button></div>
+      </div>
+      <input class="linkfield" readonly value="${esc(url)}" aria-label="Länk till lobbyn">`;
+    jp.querySelector(".linkfield").onclick = e => e.target.select();
+    $("#copyLink").onclick = async () => {
+      try { await navigator.clipboard.writeText(url); toast("Länken är kopierad."); }
+      catch(e){ const f = jp.querySelector(".linkfield"); f.focus(); f.select(); toast("Markera länken under QR-koden och kopiera den."); }
+    };
+  }
+  const ps = activePlayers(L).sort((a,b) => (a[1].joinedAt||0) - (b[1].joinedAt||0));
+  $("#pCount").textContent = ps.length;
+  $("#players").innerHTML = ps.map(([id,p]) =>
+    `<span class="player ${id === S.me.id ? "me" : ""}">${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`).join("");
+  if (!S.dragging){ const t = clampT(L.settings.seconds); $("#timeRange").value = t; $("#timeOut").textContent = t + " s"; }
+  const host = isHost(), cats = L.settings.cats;
+  $("#settingsPanel").classList.toggle("locked", !host);
+  $("#catCount").textContent = `${cats.length} av ${CAT_KEYS.length}`;
+  buildSettingsOnce();
+  document.querySelectorAll("#catChips .chip").forEach(b => {
+    const k = b.dataset.k, on = cats.includes(k);
+    b.classList.toggle("on", on); b.setAttribute("aria-pressed", on);
+    b.style.background = on ? CATS[k].color : "";
+    b.tabIndex = host ? 0 : -1;
+  });
+  $("#startGameBtn").style.display = host ? "" : "none";
+  $("#waitNote").style.display = host ? "none" : "";
+  $("#hostNote").textContent = host ? (remote ? "Du är värd och väljer kategorier." : "") : "Bara värden kan ändra kategorierna.";
+}
+function buildSettingsOnce(){
+  if ($("#catChips").children.length) return;
+  $("#catChips").innerHTML = CAT_KEYS.map(k => `<button class="chip" data-k="${k}" style="--chipc:${CATS[k].color}"><i></i>${CATS[k].name}</button>`).join("");
+  document.querySelectorAll("#catChips .chip").forEach(b => b.onclick = () => {
+    if (!isHost()) return;
+    const k = b.dataset.k, cur = S.L.settings.cats;
+    const next = cur.includes(k) ? cur.filter(x => x !== k) : CAT_KEYS.filter(x => cur.includes(x) || x === k);
+    if (!next.length){ toast("Minst en kategori måste vara med."); return; }
+    S.store.update({ settings:{ cats:next } });
+  });
+  const r = $("#timeRange");
+  r.addEventListener("input", () => { S.dragging = true; $("#timeOut").textContent = r.value + " s"; });
+  r.addEventListener("change", () => {
+    S.dragging = false;
+    const t = clampT(r.value);
+    if (S.L && t !== S.L.settings.seconds) S.store.update({ settings:{ seconds:t } });
+  });
+}
+
+function renderPlay(){
+  const L = S.L, cats = L.settings.cats;
+  $("#playLobby").textContent = S.store.remote ? `Lobby ${L.code}` : "Frågekort";
+  $("#backLobbyBtn").style.display = isHost() ? "" : "none";
+  const heroKey = cats.join(",");
+  if ($("#playHero").dataset.k !== heroKey){ $("#playHero").dataset.k = heroKey; $("#playHero").innerHTML = cats.map((k, i) =>
+    `<div class="fan" style="background:${CATS[k].color};transform:translateX(-50%) rotate(${(i - (cats.length - 1) / 2) * 11}deg)">${CATS[k].name}</div>`).join(""); }
+  const n = activePlayers(L).length;
+  $("#playInfo").textContent = `${cats.length === CAT_KEYS.length ? "Alla kategorier" : cats.map(k => CATS[k].name).join(", ")}. ${clampT(L.settings.seconds)} sekunder att tänka. ${n} spelare.`;
+}
+
+/* ---- Kort ---- */
+let pendingCard = null;
+// Slumpar en fråga i kategorin som lobbyn inte haft. När alla är använda börjar kategorin om.
+function setCard(cat){
+  const L = S.L; if (!L) return false;
+  if (!CATS[cat]){ toast("Kortet hör inte till leken."); return false; }
+  if (!L.settings.cats.includes(cat)){ toast(`${CATS[cat].name} är avstängd i den här lobbyn. Dra ett nytt kort.`); return false; }
+  const list = Q[cat] || [];
+  if (!list.length){ toast(`Det finns inga frågor i ${CATS[cat].name} än.`); return false; }
+  let used = (L.used || []).filter(k => typeof k === "string");
+  let fresh = list.map((_, i) => i).filter(i => !used.includes(cat + ":" + i));
+  if (!fresh.length){
+    used = used.filter(k => !k.startsWith(cat + ":"));
+    fresh = list.map((_, i) => i);
+    if (list.length > 1) toast(`Alla frågor i ${CATS[cat].name} är använda. Kategorin börjar om.`);
+  }
+  const last = L.card && L.card.cat === cat ? L.card.qi : -1;
+  if (fresh.length > 1) fresh = fresh.filter(i => i !== last);
+  const qi = fresh[Math.random() * fresh.length | 0];
+  used = used.concat(cat + ":" + qi).slice(-500);
+  const id = cat + "-" + qi + "_" + Date.now().toString(36);
+  S.store.update({ started:true, used,
+    card:{ id, cat, qi, by:S.me.name || "Någon", startedAt:Date.now(), seconds:clampT(L.settings.seconds), buzz:null, revealed:false } });
+  return true;
+}
+function randomCard(){
+  const L = S.L, used = L.used || [];
+  const cats = L.settings.cats.filter(c => (Q[c] || []).length);
+  if (!cats.length){ toast("Det finns inga frågor i de valda kategorierna."); return; }
+  const left = c => Q[c].filter((_, i) => !used.includes(c + ":" + i)).length;
+  let pool = cats.flatMap(c => Array(left(c)).fill(c));
+  if (!pool.length) pool = cats;
+  setCard(pool[Math.random() * pool.length | 0]);
+}
+
+/* Faser: reading → buzz → answering → answer-open → revealed  (eller buzz → allskip → revealed) */
+function remaining(c){ return Math.max(0, c.seconds - elapsed(c.startedAt)); }
+function mySkips(L){ return (L.skips && L.skips[L.card.id]) || {}; }
+function phase(L){
+  const c = L && L.card; if (!c) return "none";
+  if (c.revealed) return "revealed";
+  if (c.buzz) return elapsed(c.buzz.at) >= ANSWER_SECONDS ? "answer-open" : "answering";
+  if (remaining(c) > 0) return "reading";
+  const ps = activePlayers(L), sk = mySkips(L);
+  if (ps.length && ps.every(([id]) => sk[id])) return "allskip";
+  return "buzz";
+}
+
+function renderQuestion(){
+  const card = S.L.card, [text] = qOf(card);
+  const cat = CATS[card.cat] || { name:"", color:"#888" };
+  $("#qLobby").textContent = S.store.remote ? `Lobby ${S.L.code}` : "Frågekort";
+  $("#toLobbyBtn").style.display = isHost() ? "" : "none";
+  if (S.cardShown !== card.id){
+    closeScanner();
+    $("#qwrap").innerHTML = `
+      <article class="qcard" id="qcard" style="background:${cat.color}">
+        <div class="qmeta"><span>${cat.name}</span><span>Fråga ${card.qi + 1} av ${(Q[card.cat] || []).length}</span></div>
+        <p class="qtext">${esc(text)}</p>
+      </article>
+      <p class="byline">Kortet drogs av ${esc(card.by)}</p>
+      <div class="stage" id="stage" style="--catc:${cat.color}"></div>`;
+    document.documentElement.style.setProperty("--catc", cat.color);
+    $("#winQ").textContent = text;
+    S.cardShown = card.id; S.phaseShown = null; S.stageKey = null;
+  }
+  show("question");
+  renderStage();
+}
+
+function stageKeyNow(){
+  const L = S.L, c = L.card, ph = phase(L), sk = mySkips(L);
+  return [c.id, ph, sk[S.me.id] ? 1 : 0, Object.keys(sk).length, activePlayers(L).length, S.pressing === c.id ? 1 : 0, c.buzz ? c.buzz.id : ""].join("|");
+}
+
+function renderStage(){
+  const L = S.L; if (!L || !L.card) return;
+  const card = L.card, ph = phase(L), key = stageKeyNow();
+  if (key === S.stageKey) return;
+  const prev = S.phaseShown;
+  S.stageKey = key; S.phaseShown = ph;
+  const stage = $("#stage"), qc = $("#qcard"); if (!stage || !qc) return;
+  const [, answer] = qOf(card);
+  const mine = card.buzz && card.buzz.id === S.me.id;
+
+  qc.classList.toggle("big", ph === "reading");
+  qc.classList.toggle("small", ph !== "reading");
+  $("#tline").classList.toggle("on", ph === "reading" && S.view === "question");
+  $("#win").classList.toggle("on", !!mine && (ph === "answering" || ph === "answer-open") && S.view === "question");
+
+  if (ph === "reading"){
+    stage.innerHTML = "";
+  } else if (ph === "buzz"){
+    if (prev === "reading") vib([80, 60, 80]);
+    const sk = mySkips(L), skipped = !!sk[S.me.id], n = activePlayers(L).length, ns = Object.keys(sk).length;
+    if (skipped){
+      stage.innerHTML = `<div class="waitbox"><strong>Du skippade</strong><span>${ns} av ${n} har skippat. Väntar på de andra…</span></div>`;
+    } else {
+      const busy = S.pressing === card.id;
+      stage.innerHTML = `<div class="buzzwrap">
+          <button class="buzz" id="buzzBtn" ${busy ? "disabled" : ""}>${busy ? "…" : "Svara"}</button>
+          <button class="skipbtn" id="skipBtn" ${busy ? "disabled" : ""}>Skip</button>
+        </div>`;
+      $("#buzzBtn").onclick = pressBuzz;
+      $("#skipBtn").onclick = () => S.store.update({ skips:{ [card.id]:{ [S.me.id]: true } } });
+    }
+  } else if (ph === "answering" || ph === "answer-open"){
+    const open = ph === "answer-open", who = esc(card.buzz.name || "Någon");
+    const left = Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(card.buzz.at)));
+    if (mine){
+      if (prev !== "answering" && prev !== "answer-open") vib(250);
+      $("#winBig").textContent = open ? "Tiden är ute" : "Svara nu!";
+      $("#winCd").style.visibility = open ? "hidden" : "visible";
+      $("#winCd").textContent = left;
+      $("#winBottom").innerHTML = open ? `<button class="btn" id="winReveal">Visa svar</button>` : `<p>Säg svaret högt</p>`;
+      if (open) $("#winReveal").onclick = reveal;
+      stage.innerHTML = `<div class="waitbox"><strong>Du svarar</strong></div>`;
+    } else {
+      stage.innerHTML = open
+        ? `<div class="waitbox"><strong>${who} har svarat</strong><span>Rätt eller fel? Kolla svaret.</span></div>
+           <button class="btn primary" id="revealBtn">Visa svar</button>`
+        : `<div class="waitbox"><strong>${who} tryckte först</strong><span>och har ${ANSWER_SECONDS} sekunder på sig att svara</span><b id="cd">${left}</b></div>`;
+      if (open) $("#revealBtn").onclick = reveal;
+    }
+  } else if (ph === "allskip"){
+    stage.innerHTML = `<div class="waitbox"><strong>Alla skippade</strong><span>Ingen vågade svara den här gången.</span></div>
+      <button class="btn primary" id="revealBtn">Visa svar</button>`;
+    $("#revealBtn").onclick = reveal;
+  } else if (ph === "revealed"){
+    const byline = card.buzz ? `<p>${card.buzz.id === S.me.id ? "Du" : esc(card.buzz.name)} svarade först.</p>` : "";
+    stage.innerHTML = `<div class="answer"><small>Rätt svar</small><div>${esc(answer)}</div>${byline}</div>
+      <div class="stack">
+        <button class="btn primary" id="nextScan">Skanna nästa kort</button>
+        <button class="btn ghost" id="nextRand">Dra ett slumpat kort</button>
+      </div>`;
+    $("#nextScan").onclick = () => openScanner("card");
+    $("#nextRand").onclick = randomCard;
+  }
+}
+function reveal(){ S.store.update({ card:{ revealed:true } }); }
+
+async function pressBuzz(){
+  const L = S.L, card = L && L.card; if (!card || card.buzz || S.pressing === card.id) return;
+  S.pressing = card.id; renderStage();
+  const me = { id:S.me.id, name:S.me.name || "Någon", at:Date.now() };
+  try {
+    const { won, winner } = await S.store.claimBuzz(card.id, me);
+    if (!S.L || !S.L.card || S.L.card.id !== card.id) return;
+    const w = won ? me : winner;
+    if (w && !S.L.card.buzz) S.store.update({ card:{ buzz:w } });
+    if (!won) toast(winner && winner.name ? `${winner.name} hann före.` : "Någon hann före.");
+  } catch(e){
+    toast("Trycket kom inte fram. Försök igen.");
+  } finally {
+    if (S.pressing === card.id){ S.pressing = null; renderStage(); }
+  }
+}
+
+/* Uppdaterar tidslinje och nedräkningar varje bildruta */
+function loop(){
+  requestAnimationFrame(loop);
+  if (S.view !== "question" || !S.L || !S.L.card) return;
+  const c = S.L.card;
+  if (stageKeyNow() !== S.stageKey) renderStage();
+  const ph = S.phaseShown;
+  if (ph === "reading") $("#tfill").style.transform = `scaleX(${1 - remaining(c) / c.seconds})`;
+  if (ph === "answering"){
+    const n = String(Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(c.buzz.at))));
+    const a = $("#cd"); if (a && a.textContent !== n) a.textContent = n;
+    const b = $("#winCd"); if (b.textContent !== n) b.textContent = n;
+  }
+}
+requestAnimationFrame(loop);
+
+/* ================= Skanner ================= */
+const video = $("#video"), statusEl = $("#status"), frame = $("#frame");
+let stream = null, raf = 0, detector = null, lastTry = 0, busy = false;
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently:true });
+
+async function openScanner(mode){
+  S.scanMode = mode === "act" ? "act" : "card";
+  $("#scanTitle").textContent = S.scanMode === "act" ? "Skanna aktiveringskortet" : "Skanna kortets QR-kod";
+  $("#codeIn").placeholder = S.scanMode === "act" ? "Eller skriv koden, t.ex. K7Q2-XP9M-4TDA" : "Eller skriv koden, t.ex. GEO";
+  $("#scanner").classList.add("on"); frame.classList.remove("hit");
+  $("#codeIn").value = ""; statusEl.textContent = "Startar kameran…";
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    statusEl.textContent = "Kameran går inte att nå här. Skriv koden som står under QR-koden."; return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false });
+    if (!$("#scanner").classList.contains("on")){ stopStream(); return; }
+    video.srcObject = stream; await video.play();
+    if (!detector && "BarcodeDetector" in window){
+      try { const f = await BarcodeDetector.getSupportedFormats(); if (f.includes("qr_code")) detector = new BarcodeDetector({ formats:["qr_code"] }); } catch(e){}
+    }
+    statusEl.textContent = "Håll QR-koden inom ramen.";
+    raf = requestAnimationFrame(tick);
+  } catch(err){
+    statusEl.textContent = err && err.name === "NotAllowedError"
+      ? "Kameran är blockerad. Tillåt kameraåtkomst för sidan, eller skriv koden under QR-koden."
+      : "Ingen kamera hittades. Skriv koden som står under QR-koden.";
+  }
+}
+function stopStream(){ cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; }
+function closeScanner(){ stopStream(); $("#scanner").classList.remove("on"); }
+async function tick(t){
+  raf = requestAnimationFrame(tick);
+  if (busy || t - lastTry < 140 || video.readyState < 2) return;
+  lastTry = t; busy = true;
+  try {
+    let text = null;
+    if (detector){ const codes = await detector.detect(video); if (codes.length) text = codes[0].rawValue; }
+    else if (window.jsQR){
+      const w = 480, h = Math.round(w * video.videoHeight / video.videoWidth) || 360;
+      canvas.width = w; canvas.height = h; ctx.drawImage(video, 0, 0, w, h);
+      const res = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts:"dontInvert" });
+      if (res) text = res.data;
+    }
+    if (text) handleScan(text);
+  } catch(e){}
+  busy = false;
+}
+let lastBad = "", scanLock = false;
+function handleScan(text){
+  if (scanLock) return;
+  const act = parseAct(text);
+  if (act){
+    scanLock = true; frame.classList.add("hit"); vib(40); statusEl.textContent = "Kontrollerar koden…";
+    activate(act).finally(() => { scanLock = false; closeScanner(); });
+    return;
+  }
+  if (S.scanMode === "act"){ statusEl.textContent = "Det här är inte ett aktiveringskort."; return; }
+  const cat = catFromText(text);
+  if (!cat){ statusEl.textContent = "Den här QR-koden hör inte till kortleken."; return; }
+  if (S.L && !S.L.settings.cats.includes(cat)){
+    if (lastBad !== cat){ vib([30,40,30]); lastBad = cat; }
+    statusEl.textContent = `${CATS[cat].name} är avstängd i lobbyn. Dra ett nytt kort.`; return;
+  }
+  frame.classList.add("hit"); vib(40); statusEl.textContent = "Kort hittat!";
+  scanLock = true;
+  setTimeout(() => { scanLock = false; closeScanner(); setCard(cat); }, 250);
+}
+
+/* ================= Länkar: lobby (#L-ABCD), kort (#GEO), aktivering (#AKT-…) ================= */
+async function handleHash(){
+  const raw = decodeURIComponent(location.hash.slice(1));
+  if (!raw) return;
+  try { history.replaceState(null, "", location.href.split("#")[0]); } catch(e){}
+  const h = raw.toUpperCase();
+  const act = parseAct(h);
+  if (h.startsWith("AKT") && act){ if (S.view !== "start"){ renderStart(); show("start"); } await activate(act); return; }
+  const lm = h.match(/^L-([A-Z]{4})$/);
+  if (lm){
+    const code = lm[1];
+    if (S.store && S.store.remote && S.store.code === code) return;
+    if (S.me.name && await joinLobby(code, true)) return;
+    S.invite = code; renderStart(); show("start");
+    if (!S.me.name) $("#nameIn").focus();
+    return;
+  }
+  const cat = catFromText(h); if (!cat) return;
+  if (S.L){ setCard(cat); return; }
+  const saved = ls.get("fk-lobby");
+  if (saved){ pendingCard = cat; if (await joinLobby(saved, true)) return; pendingCard = null; }
+  if (S.act){ pendingCard = cat; await playSolo(); if (!S.store) pendingCard = null; return; }
+  toast("Skapa eller gå med i en lobby först, och skanna sedan kortet.");
+}
+window.addEventListener("hashchange", handleHash);
+
+/* ================= Knappar ================= */
+$("#createBtn").onclick = createLobby;
+$("#joinBtn").onclick = () => joinLobby();
+$("#joinIn").addEventListener("keydown", e => { if (e.key === "Enter") joinLobby(); });
+$("#nameIn").addEventListener("keydown", e => { if (e.key === "Enter" && S.invite) joinLobby(); });
+$("#soloBtn").onclick = () => { S.me.name = $("#nameIn").value.trim() || S.me.name; if (S.me.name) ls.set("fk-name", S.me.name); playSolo(); };
+$("#leaveBtn").onclick = leaveLobby;
+$("#startGameBtn").onclick = () => S.store && S.store.update({ started:true });
+$("#backLobbyBtn").onclick = () => S.store && S.store.update({ started:false });
+$("#scanBtn").onclick = () => openScanner("card");
+$("#randBtn").onclick = randomCard;
+$("#toLobbyBtn").onclick = () => S.store && S.store.update({ card:null });
+$("#closeScan").onclick = closeScanner;
+$("#manual").onsubmit = e => {
+  e.preventDefault();
+  const v = $("#codeIn").value, act = parseAct(v), cat = catFromText(v);
+  if (act || (cat && S.scanMode === "card")) handleScan(v);
+  else statusEl.textContent = S.scanMode === "act"
+    ? "Koden har tolv tecken, t.ex. K7Q2-XP9M-4TDA."
+    : "Koden finns inte. Den ser ut som GEO och står under QR-koden.";
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeScanner(); });
+
+renderStart(); show("start");
+handleHash();
+</script>
+</body>
+</html>

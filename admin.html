@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Frågekort – admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F5; --surface:#FFFFFF; --ink:#1B2230; --muted:#5E6878; --line:#D6DCE5; --soft:#E3E8EF; --ok:#1E9E6A; --bad:#D93A3A;
+  --font:"Bricolage Grotesque", ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#141922; --surface:#1E2530; --ink:#EEF1F6; --muted:#9AA4B4; --line:#2E3746; --soft:#262E3B; } }
+:root[data-theme="dark"]{ --bg:#141922; --surface:#1E2530; --ink:#EEF1F6; --muted:#9AA4B4; --line:#2E3746; --soft:#262E3B; }
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--font); -webkit-font-smoothing:antialiased; }
+button, input, select{ font:inherit; color:inherit; }
+button{ cursor:pointer; }
+button:focus-visible, input:focus-visible{ outline:3px solid #2F6FED; outline-offset:2px; }
+.wrap{ max-width:900px; margin:0 auto; padding:24px 18px 60px; }
+header.top{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:22px; }
+header.top h1{ margin:0; font-size:1.6rem; letter-spacing:-.03em; }
+header.top span{ color:var(--muted); font-size:.92rem; }
+.panel{ background:var(--surface); border-radius:18px; padding:20px; box-shadow:inset 0 0 0 1px var(--line); margin-bottom:16px; }
+.panel h2{ margin:0 0 6px; font-size:1.15rem; }
+.panel > p{ margin:0 0 14px; color:var(--muted); line-height:1.45; max-width:70ch; }
+.btn{ padding:12px 18px; border:0; border-radius:12px; font-weight:600; background:var(--ink); color:var(--bg); }
+.btn.ghost{ background:transparent; color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--line); }
+.btn:disabled{ opacity:.55; cursor:default; }
+.row{ display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+.field{ padding:12px 14px; border-radius:12px; border:0; background:var(--bg); box-shadow:inset 0 0 0 1.5px var(--line); }
+label{ display:grid; gap:6px; font-size:.9rem; color:var(--muted); }
+.msg{ margin:12px 0 0; padding:12px 14px; border-radius:12px; background:var(--soft); line-height:1.4; }
+.msg.bad{ background:rgba(217,58,58,.12); }
+table{ width:100%; border-collapse:collapse; font-size:.93rem; }
+th, td{ text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+th{ color:var(--muted); font-weight:600; }
+td.code{ font-weight:600; letter-spacing:.04em; }
+.tablewrap{ overflow-x:auto; margin-top:14px; }
+.pill{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:.82rem; font-weight:600; }
+.pill.on{ background:rgba(30,158,106,.15); color:var(--ok); } .pill.off{ background:rgba(217,58,58,.14); color:var(--bad); }
+.small{ padding:7px 12px; border-radius:9px; font-size:.85rem; }
+.hidden{ display:none !important; }
+
+/* Utskrift */
+#printArea{ display:none; }
+.sheet{ display:grid; grid-template-columns:repeat(3, 1fr); gap:10mm; }
+.acard, .ccard{ break-inside:avoid; border:1px solid #bbb; border-radius:4mm; overflow:hidden; background:#fff; color:#111; text-align:center; }
+.acard{ padding:6mm 5mm; }
+.acard b{ display:block; font-size:11pt; margin-bottom:3mm; }
+.acard .qr{ width:36mm; height:36mm; margin:0 auto 3mm; }
+.acard .qr svg, .ccard .qr svg{ width:100%; height:100%; display:block; }
+.acard .code{ font-size:12pt; font-weight:800; letter-spacing:.06em; }
+.acard small{ display:block; margin-top:2mm; font-size:8pt; color:#555; }
+.ccard header{ color:#fff; padding:3mm; font-weight:600; font-size:11pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.ccard .qr{ width:40mm; height:40mm; margin:5mm auto 3mm; }
+.ccard footer{ padding:0 0 4mm; font-size:9pt; color:#444; }
+@media print{
+  @page{ margin:12mm; }
+  body{ background:#fff; }
+  .wrap{ display:none; }
+  #printArea{ display:block; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Frågekort, admin</h1>
+    <div id="who"></div>
+  </header>
+
+  <section class="panel" id="signin">
+    <h2>Logga in</h2>
+    <p>Logga in med Google-kontot som står i databasreglerna. Bara det kontot kan skapa och stänga av aktiveringskoder.</p>
+    <button class="btn" id="loginBtn">Logga in med Google</button>
+    <div id="loginMsg"></div>
+  </section>
+
+  <div id="app" class="hidden">
+    <section class="panel">
+      <h2>Skapa aktiveringskoder</h2>
+      <p>En kod per låda. Du får en fil till tryckeriet och ett ark med färdiga aktiveringskort som du kan skriva ut själv.</p>
+      <div class="row">
+        <label>Antal koder<input class="field" id="genN" type="number" min="1" max="5000" value="50" style="width:120px"></label>
+        <label>Namn på omgången<input class="field" id="genBatch" placeholder="T.ex. Tryck 1" style="width:200px"></label>
+        <button class="btn" id="genBtn">Skapa koder</button>
+      </div>
+      <div id="genMsg"></div>
+      <div class="row hidden" id="genOut" style="margin-top:12px">
+        <button class="btn ghost" id="genCsv">Ladda ner fil till tryckeriet (CSV)</button>
+        <button class="btn ghost" id="genPrint">Skriv ut aktiveringskort</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Aktiveringskoder</h2>
+      <p>Sök upp en kod för att se hur mycket den använts, eller stäng av den om den spridits. En avstängd kod kan inte skapa nya lobbyer, och lobbyer som redan skapats med den slutar fungera.</p>
+      <div class="row">
+        <label>Sök kod<input class="field" id="findIn" placeholder="K7Q2-XP9M-4TDA" style="width:220px"></label>
+        <button class="btn ghost" id="findBtn">Sök</button>
+        <label>Visa omgång<input class="field" id="batchIn" placeholder="T.ex. Tryck 1" style="width:180px"></label>
+        <button class="btn ghost" id="batchBtn">Visa</button>
+        <button class="btn ghost" id="latestBtn">Senaste 100</button>
+      </div>
+      <div id="listMsg"></div>
+      <div class="row hidden" id="listOut" style="margin-top:12px">
+        <button class="btn ghost small" id="listCsv">Ladda ner listan (CSV)</button>
+        <button class="btn ghost small" id="listPrint">Skriv ut listans aktiveringskort</button>
+      </div>
+      <div class="tablewrap"><table id="codeTable"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Kategorikort</h2>
+      <p>De sex korten som följer med i lådan, ett per kategori. De behöver bara göras en gång. Adressen korten pekar på: <b id="gameUrl"></b></p>
+      <button class="btn ghost" id="catPrint">Skriv ut kategorikort</button>
+    </section>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit, writeBatch, updateDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { FIREBASE_CONFIG, APP_URL } from "./config.js";
+import { CATS, Q } from "./fragor.js";
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const GAME_URL = APP_URL || new URL("./", location.href).href;
+const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // 32 tecken, inga O/0/I/1
+const fmt = c => c.replace(/(.{4})(?=.)/g, "$1-");
+const actURL = c => GAME_URL + "#AKT-" + c;
+const msg = (el, text, bad) => { $(el).innerHTML = text ? `<p class="msg ${bad ? "bad" : ""}">${text}</p>` : ""; };
+function qrSvg(text){
+  try { const qr = qrcode(0, "M"); qr.addData(text); qr.make(); return qr.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
+  catch(e){ return ""; }
+}
+function newCode(){
+  const b = new Uint8Array(12); crypto.getRandomValues(b);
+  return Array.from(b, x => ALPHABET[x & 31]).join("");
+}
+function dateStr(ts){ if (!ts || !ts.toDate) return "–"; return ts.toDate().toLocaleString("sv-SE", { dateStyle:"short", timeStyle:"short" }); }
+function download(name, text){
+  const blob = new Blob(["\ufeff" + text], { type:"text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function csvFor(codes){
+  return "kod;kod_med_streck;lank\n" + codes.map(c => `${c};${fmt(c)};${actURL(c)}`).join("\n");
+}
+function printActCards(codes){
+  $("#printArea").innerHTML = `<div class="sheet">${codes.map(c => `
+    <div class="acard"><b>Aktivera Frågekort</b><div class="qr">${qrSvg(actURL(c))}</div>
+      <div class="code">${fmt(c)}</div><small>Skanna med kameran, eller skriv koden i spelet.</small></div>`).join("")}</div>`;
+  setTimeout(() => window.print(), 50);
+}
+
+$("#gameUrl").textContent = GAME_URL;
+$("#catPrint").onclick = () => {
+  $("#printArea").innerHTML = `<div class="sheet">${Object.keys(CATS).map(k => `
+    <div class="ccard"><header style="background:${CATS[k].color}">${esc(CATS[k].name)}</header>
+      <div class="qr">${qrSvg(GAME_URL + "#" + k)}</div><footer>${k}</footer></div>`).join("")}</div>`;
+  setTimeout(() => window.print(), 50);
+};
+
+if (!FIREBASE_CONFIG || !FIREBASE_CONFIG.projectId){
+  msg("#loginMsg", "config.js är inte ifylld än. Följ steg 1 i guiden.", true);
+  $("#loginBtn").disabled = true;
+  throw new Error("config saknas");
+}
+const app = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(app), db = getFirestore(app);
+
+$("#loginBtn").onclick = async () => {
+  msg("#loginMsg", "");
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch(e){
+    if (e.code === "auth/popup-blocked") return signInWithRedirect(auth, new GoogleAuthProvider());
+    if (e.code === "auth/unauthorized-domain") msg("#loginMsg", `Domänen ${esc(location.hostname)} är inte godkänd. Lägg till den under Authentication → Settings → Authorized domains i Firebase.`, true);
+    else if (e.code === "auth/operation-not-allowed") msg("#loginMsg", "Google-inloggning är inte påslagen. Slå på den under Authentication → Sign-in method i Firebase.", true);
+    else if (e.code !== "auth/popup-closed-by-user") msg("#loginMsg", "Inloggningen misslyckades: " + esc(e.message), true);
+  }
+};
+onAuthStateChanged(auth, user => {
+  $("#signin").classList.toggle("hidden", !!user);
+  $("#app").classList.toggle("hidden", !user);
+  $("#who").innerHTML = user ? `<span>${esc(user.email)}</span> <button class="btn ghost small" id="logout">Logga ut</button>` : "";
+  if (user) $("#logout").onclick = () => signOut(auth);
+});
+const denied = e => e && e.code === "permission-denied"
+  ? `Kontot har inte behörighet. Kontrollera att ${esc(auth.currentUser && auth.currentUser.email)} står i firestore.rules och att reglerna är publicerade.`
+  : "Något gick fel: " + esc(e && e.message);
+
+/* Skapa koder */
+let lastGenerated = [];
+$("#genBtn").onclick = async () => {
+  const n = Math.max(1, Math.min(5000, parseInt($("#genN").value, 10) || 0));
+  const batchName = $("#genBatch").value.trim() || new Date().toISOString().slice(0, 10);
+  $("#genBtn").disabled = true; $("#genOut").classList.add("hidden");
+  const codes = [...new Set(Array.from({ length:n }, newCode))];
+  try {
+    for (let i = 0; i < codes.length; i += 400){
+      const b = writeBatch(db);
+      for (const c of codes.slice(i, i + 400)) b.set(doc(db, "codes", c), { active:true, uses:0, batch:batchName, createdAt:serverTimestamp() });
+      await b.commit();
+      msg("#genMsg", `Sparar… ${Math.min(i + 400, codes.length)} av ${codes.length}`);
+    }
+    lastGenerated = codes;
+    msg("#genMsg", `${codes.length} koder skapade i omgången <b>${esc(batchName)}</b>. Ladda ner filen nu, eller hämta den senare under Visa omgång.`);
+    $("#genOut").classList.remove("hidden");
+  } catch(e){ msg("#genMsg", denied(e), true); }
+  $("#genBtn").disabled = false;
+};
+$("#genCsv").onclick = () => download(`aktiveringskoder-${lastGenerated.length}.csv`, csvFor(lastGenerated));
+$("#genPrint").onclick = () => printActCards(lastGenerated);
+
+/* Lista och stäng av */
+let listed = [];
+function renderList(rows){
+  listed = rows;
+  $("#listOut").classList.toggle("hidden", !rows.length);
+  $("#codeTable").innerHTML = rows.length ? `<thead><tr><th>Kod</th><th>Status</th><th>Lobbyer skapade</th><th>Senast använd</th><th>Omgång</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="code">${fmt(r.id)}</td>
+      <td><span class="pill ${r.active ? "on" : "off"}">${r.active ? "Aktiv" : "Avstängd"}</span></td>
+      <td>${r.uses || 0}</td><td>${dateStr(r.lastUsed)}</td><td>${esc(r.batch || "")}</td>
+      <td><button class="btn ghost small" data-id="${r.id}" data-on="${r.active ? 1 : 0}">${r.active ? "Stäng av" : "Slå på"}</button></td>
+    </tr>`).join("")}</tbody>` : "";
+  document.querySelectorAll("#codeTable button[data-id]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.id, on = b.dataset.on === "1";
+    if (on && !confirm(`Stänga av ${fmt(id)}? Lobbyer med koden slutar fungera.`)) return;
+    b.disabled = true;
+    try { await updateDoc(doc(db, "codes", id), { active:!on }); const r = listed.find(x => x.id === id); r.active = !on; renderList(listed); }
+    catch(e){ msg("#listMsg", denied(e), true); b.disabled = false; }
+  });
+}
+async function runList(q, empty){
+  msg("#listMsg", "Hämtar…");
+  try {
+    const s = await getDocs(q);
+    const rows = s.docs.map(d => ({ id:d.id, ...d.data() }));
+    msg("#listMsg", rows.length ? "" : empty);
+    renderList(rows);
+  } catch(e){ msg("#listMsg", denied(e), true); }
+}
+$("#findBtn").onclick = async () => {
+  const c = $("#findIn").value.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^AKT/, "");
+  if (c.length !== 12){ msg("#listMsg", "En kod har tolv tecken.", true); return; }
+  try {
+    const s = await getDoc(doc(db, "codes", c));
+    if (!s.exists()){ msg("#listMsg", "Koden finns inte."); renderList([]); return; }
+    msg("#listMsg", ""); renderList([{ id:s.id, ...s.data() }]);
+  } catch(e){ msg("#listMsg", denied(e), true); }
+};
+$("#findIn").addEventListener("keydown", e => { if (e.key === "Enter") $("#findBtn").click(); });
+$("#batchBtn").onclick = () => {
+  const b = $("#batchIn").value.trim(); if (!b){ msg("#listMsg", "Skriv namnet på omgången.", true); return; }
+  runList(query(collection(db, "codes"), where("batch", "==", b)), "Ingen omgång med det namnet.");
+};
+$("#latestBtn").onclick = () => runList(query(collection(db, "codes"), orderBy("createdAt", "desc"), limit(100)), "Inga koder skapade än.");
+$("#listCsv").onclick = () => download(`aktiveringskoder-${listed.length}.csv`, csvFor(listed.map(r => r.id)));
+$("#listPrint").onclick = () => printActCards(listed.map(r => r.id));
+</script>
+</body>
+</html>
