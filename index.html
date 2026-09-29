@@ -289,6 +289,33 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="diagBox" style="display:none;max-width:900px;margin:16px auto;padding:14px 16px;border-radius:12px;background:#FFF4E5;color:#5a3b00;font:15px/1.45 system-ui,sans-serif"></div>
+<script>
+/* Felsökning: visar på sidan vad som gick fel om sidan inte startar. */
+(function(){
+  var box = document.getElementById("diagBox");
+  function diag(t){ box.style.display = "block"; var p = document.createElement("p"); p.style.margin = "4px 0"; p.textContent = t; box.appendChild(p); }
+  window.__diag = diag;
+  window.addEventListener("error", function(e){
+    var el = e.target, src = el && (el.src || el.href);
+    if (src) diag("Kunde inte hämta: " + src); else if (e.message) diag("Fel: " + e.message);
+  }, true);
+  window.addEventListener("unhandledrejection", function(e){ diag("Fel: " + ((e.reason && (e.reason.code || e.reason.message)) || e.reason)); });
+  setTimeout(async function(){
+    if (window.__started) return;
+    diag("Sidan startade inte. Så här ser det ut:");
+    var files = ["config.js", "fragor.js"];
+    for (var i = 0; i < files.length; i++){
+      try { var r = await fetch(files[i], { cache:"no-store" });
+        diag((r.ok ? "✓ " : "✗ ") + files[i] + (r.ok ? " hittades" : " saknas på GitHub (fel " + r.status + "). Kontrollera att namnet är exakt " + files[i]));
+      } catch(err){ diag("✗ " + files[i] + " kunde inte hämtas"); }
+    }
+    try { await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"); diag("✓ Firebase går att nå"); }
+    catch(err){ diag("✗ Firebase (www.gstatic.com) är blockerat av nätverket. Prova på telefonen med mobildata eller en annan dator."); }
+    diag("Ta en skärmdump av den här rutan och skicka den.");
+  }, 5000);
+})();
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
@@ -298,6 +325,7 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, runTransactio
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, APP_URL } from "./config.js";
 import { CATS, Q } from "./fragor.js";
+window.__started = true;
 
 /* ================= Inställningar ================= */
 const TIME_MIN = 5, TIME_MAX = 60, TIME_DEFAULT = 20;  // tid att tänka (sekunder)
