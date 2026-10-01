@@ -340,7 +340,7 @@ window.__started = true;
 
 /* ================= Inställningar ================= */
 const TIME_MIN = 5, TIME_MAX = 60, TIME_DEFAULT = 20;  // tid att tänka (sekunder)
-const APP_VERSION = 5;                                 // höjs vid varje ny version, så gamla telefoner syns i lobbyn
+const APP_VERSION = 6;                                 // höjs vid varje ny version, så gamla telefoner syns i lobbyn
 const ANSWER_SECONDS = 5;                              // tid att svara efter att man tryckt först
 const CAT_KEYS = Object.keys(CATS);
 
@@ -497,28 +497,43 @@ function makeLocalLobby(){
   };
 }
 
-// Mäter skillnaden mellan telefonens klocka och databasens (tre mätningar, den snabbaste vinner).
+// Mäter skillnaden mellan telefonens klocka och databasens. Flera försök, det snabbaste vinner.
+// En misslyckad mätning gör inget om telefonen redan har en bra mätning sedan tidigare.
+let syncing = false, syncErr = "";
+async function readClock(ref){
+  try { return await getDocFromServer(ref); }
+  catch(e){ syncErr = e && e.code || "read"; const s = await getDoc(ref); return s.metadata && s.metadata.hasPendingWrites ? null : s; }
+}
 async function syncClock(code){
-  if (!fs) return;
-  const ref = doc(fs, "lobbies", code); let best = Infinity;
-  for (let i = 0; i < 3; i++){
-    try {
-      const t0 = Date.now();
-      await updateDoc(ref, new FieldPath("players", S.me.id, "clock"), serverTimestamp());
-      const t1 = Date.now();
-      const snap = await getDocFromServer(ref);
-      const p = snap.exists() && snap.data().players && snap.data().players[S.me.id];
-      const ts = p && p.clock && typeof p.clock.toMillis === "function" ? p.clock.toMillis() : null;
-      if (ts != null && t1 - t0 < best){ best = t1 - t0; clockOffset = ts - (t0 + t1) / 2; }
-    } catch(e){ break; }
-  }
+  if (!fs || syncing) return;
+  syncing = true;
+  const ref = doc(fs, "lobbies", code); let best = Infinity, offset = 0;
+  try {
+    for (let i = 0; i < 4 && best > 250; i++){
+      try {
+        const t0 = Date.now();
+        await updateDoc(ref, new FieldPath("players", S.me.id, "clock"), serverTimestamp());
+        const t1 = Date.now();
+        const snap = await readClock(ref);
+        const p = snap && snap.exists() && snap.data().players && snap.data().players[S.me.id];
+        const ts = p && p.clock && typeof p.clock.toMillis === "function" ? p.clock.toMillis() : null;
+        if (ts != null && t1 - t0 < best){ best = t1 - t0; offset = ts - (t0 + t1) / 2; }
+        else if (ts == null && !syncErr) syncErr = "no-time";
+      } catch(e){ syncErr = e && e.code || "write"; await new Promise(r => setTimeout(r, 600)); }
+    }
+  } finally { syncing = false; }
   if (!S.store || S.store.code !== code) return;
-  if (best < Infinity && !S.clockSynced){ S.clockSynced = true; clockReady(); }
+  if (best < Infinity){
+    clockOffset = offset;
+    if (!S.clockSynced){ S.clockSynced = true; clockReady(); }
+  }
+  // "synced" visar om telefonen någon gång fått en bra mätning – inte bara den senaste.
   try {
     await updateDoc(ref, new FieldPath("players", S.me.id, "v"), APP_VERSION,
-                         new FieldPath("players", S.me.id, "synced"), best < Infinity);
+                         new FieldPath("players", S.me.id, "synced"), !!S.clockSynced,
+                         new FieldPath("players", S.me.id, "syncErr"), S.clockSynced ? null : (syncErr || "okänt"));
   } catch(e){}
-  if (best === Infinity) setTimeout(() => { if (S.store && S.store.code === code) syncClock(code); }, 8000);
+  if (!S.clockSynced) setTimeout(() => { if (S.store && S.store.code === code) syncClock(code); }, 8000);
 }
 // När telefonen väcks: hämta lobbyn på nytt och mät klockan igen.
 function wake(){
@@ -697,13 +712,15 @@ function renderLobby(){
   const ps = activePlayers(L).sort((a,b) => (a[1].joinedAt||0) - (b[1].joinedAt||0));
   $("#pCount").textContent = ps.length;
   const settled = p => Date.now() - (p.joinedAt || 0) > 12000;
-  const problem = p => !remote || !settled(p) ? "" : p.v !== APP_VERSION ? "old" : p.synced === false ? "clock" : "";
+  const problem = p => !remote || !settled(p) ? "" : (p.v || 0) < APP_VERSION ? "old" : p.synced === false ? "clock" : "";
   $("#players").innerHTML = ps.map(([id,p]) => { const pr = problem(p);
-    return `<span class="player ${id === S.me.id ? "me" : ""} ${pr ? "warn" : ""}">${pr ? "⚠ " : ""}${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`; }).join("");
-  const probs = ps.map(([,p]) => problem(p)).filter(Boolean);
-  $("#playersNote").innerHTML = !probs.length ? "" : probs.includes("old")
-    ? "⚠ betyder att telefonen kör en gammal version av spelet. Stäng fliken på den telefonen och öppna spelet i ett privat fönster."
-    : "⚠ betyder att telefonen inte fick kontakt med databasen ordentligt. Kontrollera nätet och ladda om sidan.";
+    return `<span class="player ${id === S.me.id ? "me" : ""} ${pr === "old" ? "warn" : ""}">${pr === "old" ? "⚠ " : ""}${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`; }).join("");
+  const olds = ps.filter(([,p]) => problem(p) === "old").map(([,p]) => esc(p.name));
+  const clocks = ps.filter(([,p]) => problem(p) === "clock").map(([,p]) => `${esc(p.name)} (${esc(p.syncErr || "okänt")})`);
+  $("#playersNote").innerHTML = [
+    olds.length ? `⚠ ${olds.join(", ")} kör en gammal version av spelet. Stäng fliken på den telefonen och öppna spelet i ett privat fönster.` : "",
+    clocks.length ? `<span style="opacity:.75">Klockan kunde inte mätas för ${clocks.join(", ")}. Spelet räknar tiden på ett annat sätt där, så det fungerar ändå.</span>` : ""
+  ].filter(Boolean).join("<br>");
   const host = isHost(), cats = L.settings.cats;
   if (!S.dragging){ const t = clampT(L.settings.seconds); $("#timeRange").value = t; $("#timeOut").textContent = t + " s"; }
   $("#timeRange").disabled = !host;
