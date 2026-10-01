@@ -76,6 +76,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
 .players{ display:flex; flex-wrap:wrap; gap:8px; }
 .player{ padding:8px 12px; border-radius:999px; background:var(--soft); font-size:.95rem; }
 .player.me{ box-shadow:inset 0 0 0 1.5px var(--ink); }
+.player.warn{ background:#FFE7C2; color:#6b4300; }
 .chips{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
 .chip{ display:flex; align-items:center; gap:10px; padding:12px; border-radius:12px; border:0; text-align:left; background:var(--soft); font-size:.95rem; transition:background .2s, color .2s; }
 .chip i{ width:18px; height:18px; border-radius:5px; flex:none; box-shadow:inset 0 0 0 2px currentColor; opacity:.5; }
@@ -230,7 +231,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
   <div class="top"><span class="brand">Frågekort</span><button class="back" id="leaveBtn">Lämna</button></div>
   <div class="lobbycode" id="lobbyHead"></div>
   <section class="panel" id="joinPanel"></section>
-  <section class="panel"><h3>Spelare <span id="pCount"></span></h3><div class="players" id="players"></div></section>
+  <section class="panel"><h3>Spelare <span id="pCount"></span></h3><div class="players" id="players"></div><p class="hostnote" id="playersNote"></p></section>
   <section class="panel">
     <h3>Tid att tänka</h3>
     <div class="range">
@@ -339,6 +340,7 @@ window.__started = true;
 
 /* ================= Inställningar ================= */
 const TIME_MIN = 5, TIME_MAX = 60, TIME_DEFAULT = 20;  // tid att tänka (sekunder)
+const APP_VERSION = 5;                                 // höjs vid varje ny version, så gamla telefoner syns i lobbyn
 const ANSWER_SECONDS = 5;                              // tid att svara efter att man tryckt först
 const CAT_KEYS = Object.keys(CATS);
 
@@ -446,9 +448,20 @@ function makeRemoteLobby(code){
     code, remote:true,
     listen(onData){
       // Firestore visar egna ändringar direkt, innan servern svarat.
-      unsub = onSnapshot(ref, s => onData(s.exists() ? s.data() : null),
-        () => { toast("Anslutningen till lobbyn bröts. Gå med igen med koden."); goStart(); });
+      // Om anslutningen bryts försöker vi igen i stället för att kasta ut spelaren.
+      let fails = 0;
+      const sub = () => {
+        if (unsub) unsub();
+        unsub = onSnapshot(ref, s => { fails = 0; onData(s.exists() ? s.data() : null); }, () => {
+          fails++;
+          if (fails <= 5){ toast("Tappade kontakten med lobbyn. Försöker igen…"); setTimeout(() => { if (S.store && S.store.code === code) sub(); }, 1500 * fails); }
+          else { toast("Anslutningen till lobbyn bröts. Gå med igen med koden."); goStart(); }
+        });
+      };
+      this.resubscribe = sub;
+      sub();
     },
+    resubscribe(){},
     update(patch){
       const args = toFieldArgs(patch);
       if (!args.length) return queue;
@@ -499,8 +512,24 @@ async function syncClock(code){
       if (ts != null && t1 - t0 < best){ best = t1 - t0; clockOffset = ts - (t0 + t1) / 2; }
     } catch(e){ break; }
   }
+  if (!S.store || S.store.code !== code) return;
+  if (best < Infinity && !S.clockSynced){ S.clockSynced = true; clockReady(); }
+  try {
+    await updateDoc(ref, new FieldPath("players", S.me.id, "v"), APP_VERSION,
+                         new FieldPath("players", S.me.id, "synced"), best < Infinity);
+  } catch(e){}
+  if (best === Infinity) setTimeout(() => { if (S.store && S.store.code === code) syncClock(code); }, 8000);
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden && S.store && S.store.remote) syncClock(S.store.code); });
+// När telefonen väcks: hämta lobbyn på nytt och mät klockan igen.
+function wake(){
+  if (!S.store || !S.store.remote) return;
+  if (S.store.resubscribe) S.store.resubscribe();
+  syncClock(S.store.code);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) wake(); });
+window.addEventListener("online", wake);
+window.addEventListener("pageshow", e => { if (e.persisted) wake(); });
+setInterval(() => { if (!document.hidden && S.store && S.store.remote) syncClock(S.store.code); }, 90000);
 
 function genCode(){ const A = "ABCDEFGHJKLMNPQRSTUVWXYZ"; let c = ""; for (let i = 0; i < 4; i++) c += A[Math.random() * A.length | 0]; return c; }
 function needName(){
@@ -562,8 +591,9 @@ async function playSolo(){
 function enterLobby(store){
   if (S.store) S.store.leave();
   S.store = store; S.L = null; S.cardShown = null;
+  S.clockSynced = false; S.liveReady = false;
   if (store.remote){ ls.set("fk-lobby", store.code); syncClock(store.code); }
-  else clockOffset = 0;
+  else { clockOffset = 0; S.clockSynced = true; }
   store.listen(onLobby);
 }
 async function leaveLobby(){
@@ -629,6 +659,8 @@ function onLobby(L){
   if (!L){ toast("Lobbyn finns inte längre."); ls.del("fk-lobby"); goStart(); return; }
   if (L.card && !L.card.cat) L = { ...L, card:null };
   S.L = L;
+  // Efter första uppdateringen räknas allt nytt som "live" (se anchor).
+  if (!S.liveReady) setTimeout(() => { S.liveReady = true; }, 0);
   if (pendingCard){ const c = pendingCard; pendingCard = null; setCard(c); return; }
   if (L.card){
     if (S.cardShown !== L.card.id || S.view !== "question") renderQuestion(); else renderStage();
@@ -664,8 +696,14 @@ function renderLobby(){
   }
   const ps = activePlayers(L).sort((a,b) => (a[1].joinedAt||0) - (b[1].joinedAt||0));
   $("#pCount").textContent = ps.length;
-  $("#players").innerHTML = ps.map(([id,p]) =>
-    `<span class="player ${id === S.me.id ? "me" : ""}">${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`).join("");
+  const settled = p => Date.now() - (p.joinedAt || 0) > 12000;
+  const problem = p => !remote || !settled(p) ? "" : p.v !== APP_VERSION ? "old" : p.synced === false ? "clock" : "";
+  $("#players").innerHTML = ps.map(([id,p]) => { const pr = problem(p);
+    return `<span class="player ${id === S.me.id ? "me" : ""} ${pr ? "warn" : ""}">${pr ? "⚠ " : ""}${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`; }).join("");
+  const probs = ps.map(([,p]) => problem(p)).filter(Boolean);
+  $("#playersNote").innerHTML = !probs.length ? "" : probs.includes("old")
+    ? "⚠ betyder att telefonen kör en gammal version av spelet. Stäng fliken på den telefonen och öppna spelet i ett privat fönster."
+    : "⚠ betyder att telefonen inte fick kontakt med databasen ordentligt. Kontrollera nätet och ladda om sidan.";
   const host = isHost(), cats = L.settings.cats;
   if (!S.dragging){ const t = clampT(L.settings.seconds); $("#timeRange").value = t; $("#timeOut").textContent = t + " s"; }
   $("#timeRange").disabled = !host;
@@ -760,7 +798,28 @@ function randomCard(){
    checking  – svararen kollar svaret själv och trycker Rätt eller Fel
    nobody    – alla har skippat eller svarat fel
    revealed  – svaret visas för alla */
-function remaining(c){ return Math.max(0, c.seconds - elapsed(c.startedAt)); }
+// Skyddsnät för tiden. En ny fråga (eller ett nytt Svara-tryck) når alla telefoner inom någon sekund.
+// Ser tiden orimlig ut när den kommer fram – för att telefonens klocka eller klockmätning är fel –
+// räknar telefonen i stället från när den faktiskt kom fram. Bara det som fanns redan när man
+// gick med eller laddade om sidan räknas helt efter klockan.
+const seenAt = {};
+function anchor(key, at){
+  if (key in seenAt) return seenAt[key].a;
+  const d = now() - at;
+  let a = at;
+  if (!S.clockSynced) a = Math.abs(d) < 2000 ? at : now();
+  else if (S.liveReady && (d > 2500 || d < -1000)) a = now();
+  seenAt[key] = { a, at, pre: !S.clockSynced };
+  return a;
+}
+// När klockan precis blivit mätt: räkna om det som visades innan mätningen var klar.
+function clockReady(){
+  for (const k in seenAt) if (seenAt[k].pre){ seenAt[k].a = seenAt[k].at; seenAt[k].pre = false; }
+  S.stageKey = null;
+}
+const startOf = c => anchor("s" + c.id, c.startedAt);
+const buzzOf = c => anchor("b" + roundKey(c) + c.buzz.id, c.buzz.at);
+function remaining(c){ return Math.max(0, c.seconds - elapsed(startOf(c))); }
 const roundKey = c => c.id + "_" + (c.round || 0);
 function roundSkips(L){ return (L.skips && L.skips[roundKey(L.card)]) || {}; }
 function wrongOf(c){ return c.wrong || {}; }
@@ -768,7 +827,7 @@ function eligible(L){ const w = wrongOf(L.card); return activePlayers(L).filter(
 function phase(L){
   const c = L && L.card; if (!c) return "none";
   if (c.revealed) return "revealed";
-  if (c.buzz) return elapsed(c.buzz.at) >= ANSWER_SECONDS ? "checking" : "answering";
+  if (c.buzz) return elapsed(buzzOf(c)) >= ANSWER_SECONDS ? "checking" : "answering";
   if (!(c.round > 0) && remaining(c) > 0) return "reading";
   const el = eligible(L), sk = roundSkips(L);
   if (!el.length || el.every(([id]) => sk[id])) return "nobody";
@@ -854,7 +913,7 @@ function renderStage(){
     }
   } else if (ph === "answering" || ph === "checking"){
     const who = esc(card.buzz.name || "Någon");
-    const left = Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(card.buzz.at)));
+    const left = Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(buzzOf(card))));
     if (mine){
       if (prev !== "answering" && prev !== "checking") vib(250);
       const peeked = S.peek === roundKey(card);
@@ -932,12 +991,14 @@ function loop(){
   const ph = S.phaseShown;
   if (ph === "reading") $("#tfill").style.transform = `scaleX(${1 - remaining(c) / c.seconds})`;
   if (ph === "answering" && c.buzz){
-    const n = String(Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(c.buzz.at))));
+    const n = String(Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(buzzOf(c)))));
     const a = $("#cd"); if (a && a.textContent !== n) a.textContent = n;
     const b = $("#winCd"); if (b.textContent !== n) b.textContent = n;
   }
 }
 requestAnimationFrame(loop);
+// Lobbyn uppdateras då och då så att varningar för strulande telefoner syns.
+setInterval(() => { if (S.view === "lobby" && S.L && S.store) renderLobby(); }, 4000);
 
 /* ================= Skanner ================= */
 const video = $("#video"), statusEl = $("#status"), frame = $("#frame");
