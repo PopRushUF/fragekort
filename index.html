@@ -61,7 +61,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
 /* Lobby */
 .lobbycode{ text-align:center; margin:10px 0 18px; }
 .lobbycode small{ display:block; color:var(--muted); font-size:.95rem; margin-bottom:2px; }
-.lobbycode strong{ display:block; font-size:clamp(3rem, 16vw, 4.4rem); font-weight:800; letter-spacing:.12em; line-height:1; padding-left:.12em; }
+.lobbycode strong{ display:block; font-size:clamp(4.6rem, 27vw, 7.5rem); font-weight:800; letter-spacing:.12em; line-height:1; padding-left:.12em; }
 .panel{ background:var(--surface); border-radius:18px; padding:16px; box-shadow:inset 0 0 0 1px var(--line); margin-bottom:12px; }
 .panel h3{ margin:0 0 12px; font-size:1rem; font-weight:600; display:flex; justify-content:space-between; }
 .panel h3 span{ color:var(--muted); font-weight:400; font-size:.9rem; }
@@ -184,6 +184,15 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
 }
 @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
 
+/* Rätt/fel för den som svarar */
+.win .w-bottom{ margin-top:auto; }
+.win .w-count.ans{ font-size:clamp(2.6rem, 13vw, 4.4rem); line-height:1.05; letter-spacing:-.03em; max-width:100%; overflow-wrap:anywhere; }
+.judge{ display:flex; gap:12px; }
+.judge button{ flex:1; padding:20px 10px; border:0; border-radius:16px; font-size:1.25rem; font-weight:800; }
+.judge .j-ok{ background:#fff; color:var(--ok-deep); }
+.judge .j-bad{ background:rgba(0,0,0,.22); color:#fff; }
+.range input:disabled{ opacity:.45; }
+
 /* Aktivering */
 .actpanel p{ margin:0 0 12px; color:var(--muted); line-height:1.45; }
 .actpanel .field{ text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
@@ -228,7 +237,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
       <input type="range" id="timeRange" min="5" max="60" step="1" aria-label="Sekunder att tänka innan man får svara">
       <output id="timeOut" for="timeRange">20 s</output>
     </div>
-    <p class="hostnote">Alla i lobbyn kan ändra tiden, 5 till 60 sekunder.</p>
+    <p class="hostnote" id="timeNote"></p>
   </section>
   <section class="panel" id="settingsPanel">
     <h3>Kategorier <span id="catCount"></span></h3>
@@ -254,6 +263,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
     </button>
     <button class="btn ghost" id="randBtn">Dra ett slumpat kort</button>
   </div>
+  <p class="note" id="hostDraws" style="display:none">Värden drar korten. Frågan dyker upp här av sig själv.</p>
 </main>
 
 <!-- QUESTION -->
@@ -321,7 +331,7 @@ h1{ font-size:clamp(2.2rem, 9vw, 3.1rem); line-height:.95; letter-spacing:-.035e
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, runTransaction, increment, serverTimestamp, FieldPath }
+import { getFirestore, doc, getDoc, getDocFromServer, setDoc, updateDoc, onSnapshot, runTransaction, increment, serverTimestamp, FieldPath }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { FIREBASE_CONFIG, APP_URL } from "./config.js";
 import { CATS, Q } from "./fragor.js";
@@ -348,11 +358,12 @@ function deepMerge(a, b){
   for (const k in b){ const v = b[k]; out[k] = isObj(v) && isObj(out[k]) ? deepMerge(out[k], v) : v; }
   return out;
 }
+const WHOLE = new Set(["buzz", "result", "lastWrong"]);
 // Gör om {card:{buzz:x}} till fältvägar så Firestore slår ihop i stället för att skriva över.
 function toFieldArgs(obj, prefix = [], out = []){
   for (const k in obj){
     const v = obj[k], p = prefix.concat(k);
-    if (isObj(v) && Object.keys(v).length) toFieldArgs(v, p, out);
+    if (isObj(v) && Object.keys(v).length && !WHOLE.has(k)) toFieldArgs(v, p, out);
     else out.push(new FieldPath(...p), v);
   }
   return out;
@@ -367,7 +378,10 @@ function qrSvg(text){
   try { const qr = qrcode(0, "M"); qr.addData(text); qr.make(); return qr.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
   catch(e){ return ""; }
 }
-const elapsed = at => Math.max(0, (Date.now() - (at || 0)) / 1000);
+// Gemensam klocka: alla telefoner räknar med databasens tid, så att timern går lika för alla.
+let clockOffset = 0;
+const now = () => Date.now() + clockOffset;
+const elapsed = at => Math.max(0, (now() - (at || 0)) / 1000);
 
 // Kategorikort: "…#GEO", "GEO"
 function catFromText(text){
@@ -388,7 +402,7 @@ const qOf = card => ((Q[card.cat] || [])[card.qi]) || ["Frågan finns inte läng
 
 /* ================= Tillstånd ================= */
 const S = { me:{ id:null, name: ls.get("fk-name") || "" }, act: ls.get("fk-act") || null, store:null, L:null, view:"start",
-            cardShown:null, phaseShown:null, stageKey:null, pressing:null, dragging:false, invite:null, scanMode:"card" };
+            cardShown:null, phaseShown:null, stageKey:null, pressing:null, peek:null, dragging:false, invite:null, scanMode:"card" };
 function localId(){ let id = ls.get("fk-id"); if (!id){ id = "p" + Math.random().toString(36).slice(2, 12); ls.set("fk-id", id); } return id; }
 S.me.id = localId();
 
@@ -470,6 +484,24 @@ function makeLocalLobby(){
   };
 }
 
+// Mäter skillnaden mellan telefonens klocka och databasens (tre mätningar, den snabbaste vinner).
+async function syncClock(code){
+  if (!fs) return;
+  const ref = doc(fs, "lobbies", code); let best = Infinity;
+  for (let i = 0; i < 3; i++){
+    try {
+      const t0 = Date.now();
+      await updateDoc(ref, new FieldPath("players", S.me.id, "clock"), serverTimestamp());
+      const t1 = Date.now();
+      const snap = await getDocFromServer(ref);
+      const p = snap.exists() && snap.data().players && snap.data().players[S.me.id];
+      const ts = p && p.clock && typeof p.clock.toMillis === "function" ? p.clock.toMillis() : null;
+      if (ts != null && t1 - t0 < best){ best = t1 - t0; clockOffset = ts - (t0 + t1) / 2; }
+    } catch(e){ break; }
+  }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.store && S.store.remote) syncClock(S.store.code); });
+
 function genCode(){ const A = "ABCDEFGHJKLMNPQRSTUVWXYZ"; let c = ""; for (let i = 0; i < 4; i++) c += A[Math.random() * A.length | 0]; return c; }
 function needName(){
   const n = $("#nameIn").value.trim();
@@ -530,7 +562,8 @@ async function playSolo(){
 function enterLobby(store){
   if (S.store) S.store.leave();
   S.store = store; S.L = null; S.cardShown = null;
-  if (store.remote) ls.set("fk-lobby", store.code);
+  if (store.remote){ ls.set("fk-lobby", store.code); syncClock(store.code); }
+  else clockOffset = 0;
   store.listen(onLobby);
 }
 async function leaveLobby(){
@@ -633,8 +666,10 @@ function renderLobby(){
   $("#pCount").textContent = ps.length;
   $("#players").innerHTML = ps.map(([id,p]) =>
     `<span class="player ${id === S.me.id ? "me" : ""}">${esc(p.name)}${id === L.hostId && remote ? " (värd)" : ""}${id === S.me.id ? " (du)" : ""}</span>`).join("");
-  if (!S.dragging){ const t = clampT(L.settings.seconds); $("#timeRange").value = t; $("#timeOut").textContent = t + " s"; }
   const host = isHost(), cats = L.settings.cats;
+  if (!S.dragging){ const t = clampT(L.settings.seconds); $("#timeRange").value = t; $("#timeOut").textContent = t + " s"; }
+  $("#timeRange").disabled = !host;
+  $("#timeNote").textContent = host ? "Välj mellan 5 och 60 sekunder." : "Bara värden kan ändra tiden.";
   $("#settingsPanel").classList.toggle("locked", !host);
   $("#catCount").textContent = `${cats.length} av ${CAT_KEYS.length}`;
   buildSettingsOnce();
@@ -646,7 +681,7 @@ function renderLobby(){
   });
   $("#startGameBtn").style.display = host ? "" : "none";
   $("#waitNote").style.display = host ? "none" : "";
-  $("#hostNote").textContent = host ? (remote ? "Du är värd och väljer kategorier." : "") : "Bara värden kan ändra kategorierna.";
+  $("#hostNote").textContent = host ? (remote ? "Du är värd och väljer kategorier och tid." : "") : "Bara värden kan ändra kategorierna.";
 }
 function buildSettingsOnce(){
   if ($("#catChips").children.length) return;
@@ -663,7 +698,7 @@ function buildSettingsOnce(){
   r.addEventListener("change", () => {
     S.dragging = false;
     const t = clampT(r.value);
-    if (S.L && t !== S.L.settings.seconds) S.store.update({ settings:{ seconds:t } });
+    if (S.L && isHost() && t !== S.L.settings.seconds) S.store.update({ settings:{ seconds:t } });
   });
 }
 
@@ -674,6 +709,10 @@ function renderPlay(){
   const heroKey = cats.join(",");
   if ($("#playHero").dataset.k !== heroKey){ $("#playHero").dataset.k = heroKey; $("#playHero").innerHTML = cats.map((k, i) =>
     `<div class="fan" style="background:${CATS[k].color};transform:translateX(-50%) rotate(${(i - (cats.length - 1) / 2) * 11}deg)">${CATS[k].name}</div>`).join(""); }
+  const host = isHost();
+  $("#scanBtn").style.display = host ? "" : "none";
+  $("#randBtn").style.display = host ? "" : "none";
+  $("#hostDraws").style.display = host ? "none" : "";
   const n = activePlayers(L).length;
   $("#playInfo").textContent = `${cats.length === CAT_KEYS.length ? "Alla kategorier" : cats.map(k => CATS[k].name).join(", ")}. ${clampT(L.settings.seconds)} sekunder att tänka. ${n} spelare.`;
 }
@@ -683,6 +722,7 @@ let pendingCard = null;
 // Slumpar en fråga i kategorin som lobbyn inte haft. När alla är använda börjar kategorin om.
 function setCard(cat){
   const L = S.L; if (!L) return false;
+  if (!isHost()){ toast("Det är värden som drar korten."); return false; }
   if (!CATS[cat]){ toast("Kortet hör inte till leken."); return false; }
   if (!L.settings.cats.includes(cat)){ toast(`${CATS[cat].name} är avstängd i den här lobbyn. Dra ett nytt kort.`); return false; }
   const list = Q[cat] || [];
@@ -700,7 +740,7 @@ function setCard(cat){
   used = used.concat(cat + ":" + qi).slice(-500);
   const id = cat + "-" + qi + "_" + Date.now().toString(36);
   S.store.update({ started:true, used,
-    card:{ id, cat, qi, by:S.me.name || "Någon", startedAt:Date.now(), seconds:clampT(L.settings.seconds), buzz:null, revealed:false } });
+    card:{ id, cat, qi, by:S.me.name || "Någon", startedAt:now(), seconds:clampT(L.settings.seconds), round:0, buzz:null, wrong:{}, lastWrong:null, result:null, revealed:false } });
   return true;
 }
 function randomCard(){
@@ -713,16 +753,25 @@ function randomCard(){
   setCard(pool[Math.random() * pool.length | 0]);
 }
 
-/* Faser: reading → buzz → answering → answer-open → revealed  (eller buzz → allskip → revealed) */
+/* Faser:
+   reading   – frågan visas stort, tidslinjen fylls (bara första rundan)
+   buzz      – Svara/Skip för alla som inte redan svarat fel
+   answering – den som tryckte först har 5 sekunder att svara (grön skärm)
+   checking  – svararen kollar svaret själv och trycker Rätt eller Fel
+   nobody    – alla har skippat eller svarat fel
+   revealed  – svaret visas för alla */
 function remaining(c){ return Math.max(0, c.seconds - elapsed(c.startedAt)); }
-function mySkips(L){ return (L.skips && L.skips[L.card.id]) || {}; }
+const roundKey = c => c.id + "_" + (c.round || 0);
+function roundSkips(L){ return (L.skips && L.skips[roundKey(L.card)]) || {}; }
+function wrongOf(c){ return c.wrong || {}; }
+function eligible(L){ const w = wrongOf(L.card); return activePlayers(L).filter(([id]) => !w[id]); }
 function phase(L){
   const c = L && L.card; if (!c) return "none";
   if (c.revealed) return "revealed";
-  if (c.buzz) return elapsed(c.buzz.at) >= ANSWER_SECONDS ? "answer-open" : "answering";
-  if (remaining(c) > 0) return "reading";
-  const ps = activePlayers(L), sk = mySkips(L);
-  if (ps.length && ps.every(([id]) => sk[id])) return "allskip";
+  if (c.buzz) return elapsed(c.buzz.at) >= ANSWER_SECONDS ? "checking" : "answering";
+  if (!(c.round > 0) && remaining(c) > 0) return "reading";
+  const el = eligible(L), sk = roundSkips(L);
+  if (!el.length || el.every(([id]) => sk[id])) return "nobody";
   return "buzz";
 }
 
@@ -742,16 +791,31 @@ function renderQuestion(){
       <div class="stage" id="stage" style="--catc:${cat.color}"></div>`;
     document.documentElement.style.setProperty("--catc", cat.color);
     $("#winQ").textContent = text;
-    S.cardShown = card.id; S.phaseShown = null; S.stageKey = null;
+    S.cardShown = card.id; S.phaseShown = null; S.stageKey = null; S.peek = null;
   }
   show("question");
   renderStage();
 }
 
 function stageKeyNow(){
-  const L = S.L, c = L.card, ph = phase(L), sk = mySkips(L);
-  return [c.id, ph, sk[S.me.id] ? 1 : 0, Object.keys(sk).length, activePlayers(L).length, S.pressing === c.id ? 1 : 0, c.buzz ? c.buzz.id : ""].join("|");
+  const L = S.L, c = L.card, ph = phase(L), sk = roundSkips(L);
+  return [c.id, c.round || 0, ph, sk[S.me.id] ? 1 : 0, Object.keys(sk).length, Object.keys(wrongOf(c)).length,
+    activePlayers(L).length, S.pressing === roundKey(c) ? 1 : 0, c.buzz ? c.buzz.id : "", S.peek === roundKey(c) ? 1 : 0, isHost() ? 1 : 0].join("|");
 }
+
+function nextButtons(){
+  if (!isHost()) return `<p class="note">Väntar på att värden drar nästa kort…</p>`;
+  return `<div class="stack">
+      <button class="btn primary" id="nextScan">Skanna nästa kort</button>
+      <button class="btn ghost" id="nextRand">Dra ett slumpat kort</button>
+    </div>`;
+}
+function bindNext(){
+  if ($("#nextScan")) $("#nextScan").onclick = () => openScanner("card");
+  if ($("#nextRand")) $("#nextRand").onclick = randomCard;
+}
+function hostEscape(){ return isHost() ? `<button class="linkbtn" id="forceReveal">Visa svaret för alla</button>` : ""; }
+function bindEscape(){ if ($("#forceReveal")) $("#forceReveal").onclick = () => S.store.update({ card:{ revealed:true, result:null } }); }
 
 function renderStage(){
   const L = S.L; if (!L || !L.card) return;
@@ -761,78 +825,101 @@ function renderStage(){
   S.stageKey = key; S.phaseShown = ph;
   const stage = $("#stage"), qc = $("#qcard"); if (!stage || !qc) return;
   const [, answer] = qOf(card);
-  const mine = card.buzz && card.buzz.id === S.me.id;
+  const mine = !!card.buzz && card.buzz.id === S.me.id;
+  const lw = card.lastWrong;
 
   qc.classList.toggle("big", ph === "reading");
   qc.classList.toggle("small", ph !== "reading");
   $("#tline").classList.toggle("on", ph === "reading" && S.view === "question");
-  $("#win").classList.toggle("on", !!mine && (ph === "answering" || ph === "answer-open") && S.view === "question");
+  $("#win").classList.toggle("on", mine && (ph === "answering" || ph === "checking") && S.view === "question");
 
   if (ph === "reading"){
     stage.innerHTML = "";
   } else if (ph === "buzz"){
-    if (prev === "reading") vib([80, 60, 80]);
-    const sk = mySkips(L), skipped = !!sk[S.me.id], n = activePlayers(L).length, ns = Object.keys(sk).length;
-    if (skipped){
-      stage.innerHTML = `<div class="waitbox"><strong>Du skippade</strong><span>${ns} av ${n} har skippat. Väntar på de andra…</span></div>`;
+    if (prev !== "buzz") vib([80, 60, 80]);
+    const sk = roundSkips(L), n = eligible(L).length, ns = Object.keys(sk).length;
+    const wrongNote = lw ? `<p class="note" style="margin:0 0 4px">${lw.id === S.me.id ? "Du" : esc(lw.name)} svarade fel. ${lw.id === S.me.id ? "De andra får försöka." : "Ny chans!"}</p>` : "";
+    if (wrongOf(card)[S.me.id]){
+      stage.innerHTML = `<div class="waitbox"><strong>Du svarade fel</strong><span>De andra får ett nytt försök…</span></div>`;
+    } else if (sk[S.me.id]){
+      stage.innerHTML = `${wrongNote}<div class="waitbox"><strong>Du skippade</strong><span>${ns} av ${n} har skippat. Väntar på de andra…</span></div>`;
     } else {
-      const busy = S.pressing === card.id;
-      stage.innerHTML = `<div class="buzzwrap">
+      const busy = S.pressing === roundKey(card);
+      stage.innerHTML = `${wrongNote}<div class="buzzwrap">
           <button class="buzz" id="buzzBtn" ${busy ? "disabled" : ""}>${busy ? "…" : "Svara"}</button>
           <button class="skipbtn" id="skipBtn" ${busy ? "disabled" : ""}>Skip</button>
         </div>`;
       $("#buzzBtn").onclick = pressBuzz;
-      $("#skipBtn").onclick = () => S.store.update({ skips:{ [card.id]:{ [S.me.id]: true } } });
+      $("#skipBtn").onclick = () => S.store.update({ skips:{ [roundKey(card)]:{ [S.me.id]: true } } });
     }
-  } else if (ph === "answering" || ph === "answer-open"){
-    const open = ph === "answer-open", who = esc(card.buzz.name || "Någon");
+  } else if (ph === "answering" || ph === "checking"){
+    const who = esc(card.buzz.name || "Någon");
     const left = Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(card.buzz.at)));
     if (mine){
-      if (prev !== "answering" && prev !== "answer-open") vib(250);
-      $("#winBig").textContent = open ? "Tiden är ute" : "Svara nu!";
-      $("#winCd").style.visibility = open ? "hidden" : "visible";
-      $("#winCd").textContent = left;
-      $("#winBottom").innerHTML = open ? `<button class="btn" id="winReveal">Visa svar</button>` : `<p>Säg svaret högt</p>`;
-      if (open) $("#winReveal").onclick = reveal;
+      if (prev !== "answering" && prev !== "checking") vib(250);
+      const peeked = S.peek === roundKey(card);
+      const cd = $("#winCd");
+      cd.style.display = ph === "answering" || peeked ? "" : "none";
+      cd.classList.toggle("ans", ph === "checking" && peeked);
+      cd.textContent = ph === "checking" && peeked ? answer : left;
+      if (ph === "answering"){
+        $("#winBig").textContent = "Svara nu!";
+        $("#winBottom").innerHTML = `<p>Säg svaret högt</p>`;
+      } else if (!peeked){
+        $("#winBig").textContent = "Tiden är ute";
+        $("#winBottom").innerHTML = `<button class="btn" id="winPeek">Visa svar</button><p style="margin-top:10px">Bara du ser svaret.</p>`;
+        $("#winPeek").onclick = () => { S.peek = roundKey(card); renderStage(); };
+      } else {
+        $("#winBig").textContent = "Rätt svar";
+        $("#winBottom").innerHTML = `<p style="margin:0 0 12px">Svarade du rätt?</p>
+          <div class="judge"><button class="j-bad" id="judgeWrong">✗ Fel</button><button class="j-ok" id="judgeRight">✓ Rätt</button></div>`;
+        $("#judgeRight").onclick = () => judge(true);
+        $("#judgeWrong").onclick = () => judge(false);
+      }
       stage.innerHTML = `<div class="waitbox"><strong>Du svarar</strong></div>`;
     } else {
-      stage.innerHTML = open
-        ? `<div class="waitbox"><strong>${who} har svarat</strong><span>Rätt eller fel? Kolla svaret.</span></div>
-           <button class="btn primary" id="revealBtn">Visa svar</button>`
-        : `<div class="waitbox"><strong>${who} tryckte först</strong><span>och har ${ANSWER_SECONDS} sekunder på sig att svara</span><b id="cd">${left}</b></div>`;
-      if (open) $("#revealBtn").onclick = reveal;
+      stage.innerHTML = ph === "answering"
+        ? `<div class="waitbox"><strong>${who} tryckte först</strong><span>och har ${ANSWER_SECONDS} sekunder på sig att svara</span><b id="cd">${left}</b></div>`
+        : `<div class="waitbox"><strong>${who} kollar svaret…</strong><span>Rätt eller fel? Snart vet vi.</span></div>`;
+      stage.innerHTML += hostEscape();
+      bindEscape();
     }
-  } else if (ph === "allskip"){
-    stage.innerHTML = `<div class="waitbox"><strong>Alla skippade</strong><span>Ingen vågade svara den här gången.</span></div>
+  } else if (ph === "nobody"){
+    const anyWrong = Object.keys(wrongOf(card)).length;
+    stage.innerHTML = `<div class="waitbox"><strong>${anyWrong ? "Ingen fick rätt" : "Alla skippade"}</strong><span>${anyWrong ? "Alla som försökte svarade fel." : "Ingen vågade svara den här gången."}</span></div>
       <button class="btn primary" id="revealBtn">Visa svar</button>`;
-    $("#revealBtn").onclick = reveal;
+    $("#revealBtn").onclick = () => S.store.update({ card:{ revealed:true, result:null } });
   } else if (ph === "revealed"){
-    const byline = card.buzz ? `<p>${card.buzz.id === S.me.id ? "Du" : esc(card.buzz.name)} svarade först.</p>` : "";
-    stage.innerHTML = `<div class="answer"><small>Rätt svar</small><div>${esc(answer)}</div>${byline}</div>
-      <div class="stack">
-        <button class="btn primary" id="nextScan">Skanna nästa kort</button>
-        <button class="btn ghost" id="nextRand">Dra ett slumpat kort</button>
-      </div>`;
-    $("#nextScan").onclick = () => openScanner("card");
-    $("#nextRand").onclick = randomCard;
+    const r = card.result;
+    const line = r && r.correct ? `<p><b>${r.id === S.me.id ? "Du" : esc(r.name)}</b> svarade rätt!</p>` : `<p>Ingen fick rätt på den här.</p>`;
+    if (prev && prev !== "revealed" && r && r.correct) vib(r.id === S.me.id ? [60, 40, 160] : 60);
+    stage.innerHTML = `<div class="answer"><small>Rätt svar</small><div>${esc(answer)}</div>${line}</div>${nextButtons()}`;
+    bindNext();
   }
 }
-function reveal(){ S.store.update({ card:{ revealed:true } }); }
+
+function judge(correct){
+  const c = S.L.card, me = { id:S.me.id, name:S.me.name || "Någon" };
+  S.peek = null;
+  if (correct) S.store.update({ card:{ revealed:true, result:{ ...me, correct:true } } });
+  else S.store.update({ card:{ buzz:null, round:(c.round || 0) + 1, wrong:{ [S.me.id]: true }, lastWrong:me } });
+}
 
 async function pressBuzz(){
-  const L = S.L, card = L && L.card; if (!card || card.buzz || S.pressing === card.id) return;
-  S.pressing = card.id; renderStage();
-  const me = { id:S.me.id, name:S.me.name || "Någon", at:Date.now() };
+  const L = S.L, card = L && L.card; if (!card || card.buzz) return;
+  const rk = roundKey(card); if (S.pressing === rk) return;
+  S.pressing = rk; renderStage();
+  const me = { id:S.me.id, name:S.me.name || "Någon", at:now() };
   try {
-    const { won, winner } = await S.store.claimBuzz(card.id, me);
-    if (!S.L || !S.L.card || S.L.card.id !== card.id) return;
+    const { won, winner } = await S.store.claimBuzz(rk, me);
+    if (!S.L || !S.L.card || roundKey(S.L.card) !== rk) return;
     const w = won ? me : winner;
     if (w && !S.L.card.buzz) S.store.update({ card:{ buzz:w } });
     if (!won) toast(winner && winner.name ? `${winner.name} hann före.` : "Någon hann före.");
   } catch(e){
     toast("Trycket kom inte fram. Försök igen.");
   } finally {
-    if (S.pressing === card.id){ S.pressing = null; renderStage(); }
+    if (S.pressing === rk){ S.pressing = null; renderStage(); }
   }
 }
 
@@ -844,7 +931,7 @@ function loop(){
   if (stageKeyNow() !== S.stageKey) renderStage();
   const ph = S.phaseShown;
   if (ph === "reading") $("#tfill").style.transform = `scaleX(${1 - remaining(c) / c.seconds})`;
-  if (ph === "answering"){
+  if (ph === "answering" && c.buzz){
     const n = String(Math.max(1, Math.ceil(ANSWER_SECONDS - elapsed(c.buzz.at))));
     const a = $("#cd"); if (a && a.textContent !== n) a.textContent = n;
     const b = $("#winCd"); if (b.textContent !== n) b.textContent = n;
